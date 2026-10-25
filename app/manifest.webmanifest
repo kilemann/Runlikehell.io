@@ -1,7 +1,7 @@
 {
-  "name": "Løpespiller",
-  "short_name": "Løpespiller",
-  "description": "Enkel musikkspiller for løpeturen. Shuffle fra en mappe, styres med headset. Virker uten nett.",
+  "name": "Lommespiller",
+  "short_name": "Lommespiller",
+  "description": "Enkel musikkspiller i lomma. Shuffle fra en mappe, styres med headset. Virker uten nett.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

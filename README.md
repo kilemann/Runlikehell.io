@@ -1,14 +1,15 @@
 # Runlikehell.io
-Løpespiller – musikkspiller for løpeturen: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, bruker ingen datatrafikk.
+Lommespiller (tidligere Løpespiller) – enkel musikkspiller: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, bruker ingen datatrafikk.
 
-**Versjon:** 1.1.1 · Side: https://kilemannen.github.io/Runlikehell.io/
+**Versjon:** 1.2.0 · Side: https://kilemannen.github.io/Runlikehell.io/
 
 ## Oppbygging
 - `index.html` – nedlastingsside med instruksjoner
 - `sw.js` – opprydder for gamle installasjoner (ikke slett)
-- `app/index.html` – selve spilleren. Lastes ned som `Lopespiller.html` og virker som enkeltfil, eller brukes som installerbar app (PWA) med `sw.js` og `manifest.webmanifest`
+- `app/index.html` – selve spilleren. Lastes ned som `Lommespiller.html` og virker som enkeltfil, eller brukes som installerbar app (PWA) med `sw.js` og `manifest.webmanifest`
 
 ## Versjoner
+- **1.2.0** – Nytt navn: Lommespiller (tidligere Løpespiller). Lagringsnavn beholdt, så lagret standardmappe følger med.
 - **1.1.1** – `sw.js` i rotmappa er en opprydder: fjerner den gamle service workeren fra v1.0.x som fortsatt viste den gamle spilleren på enheter som hadde åpnet den før.
 - **1.1.0** – Forsiden er nedlastingsside med instruksjoner. Spilleren virker som nedlastet enkeltfil (innebygd ikon, faller tilbake til «velg mappe hver gang» når lagring ikke er tilgjengelig). PWA flyttet til `app/`.
 - **1.0.1** – Nytt kassettikon på appen/snarveien.
