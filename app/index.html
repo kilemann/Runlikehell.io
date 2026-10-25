@@ -41,7 +41,6 @@
   }
   .src-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
   .src-name { font-size: 17px; font-weight: 600; margin-top: 2px; word-break: break-word; }
-  .src-name.tmp { color: var(--warn); }
 
   .now { text-align: center; padding: 22px 16px 18px; }
   .title { font-size: 24px; font-weight: 700; line-height: 1.25; min-height: 2.5em;
@@ -70,16 +69,10 @@
   .toggle[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
   .full { width: 100%; }
 
-  details.card summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; }
-  details.card summary::after { content: "▾"; color: var(--muted); }
-  details[open].card summary::after { content: "▴"; }
-  .stack { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
   .note { color: var(--muted); font-size: 13px; }
-  .danger { color: #ff8a8a; }
 
   .status { font-size: 14px; color: var(--muted); text-align: center; min-height: 1.4em; }
   .status.err { color: #ff8a8a; }
-  progress { width: 100%; accent-color: var(--accent); }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -90,12 +83,12 @@
   </header>
 
   <section class="card">
-    <div class="src-label" id="srcLabel">Kilde</div>
-    <div class="src-name" id="srcName">Laster …</div>
+    <div class="src-label">Mappe</div>
+    <div class="src-name" id="srcName">Ingen mappe valgt</div>
   </section>
 
   <section class="card now">
-    <div class="title" id="title">Ingen sang</div>
+    <div class="title" id="title">Velg en mappe</div>
     <div class="sub" id="sub">&nbsp;</div>
     <div class="bar">
       <input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Posisjon">
@@ -117,36 +110,18 @@
 
   <section class="row">
     <button class="btn toggle" id="shuffle" aria-pressed="true">⤮ Shuffle</button>
-    <button class="btn" id="pickTmp">Annen mappe …</button>
+    <button class="btn" id="pick">Velg mappe …</button>
   </section>
-  <button class="btn full hidden" id="backStd">↩ Tilbake til standardmappe</button>
 
   <div class="status" id="status"></div>
+  <p class="note" style="text-align:center;margin:0">Sangene spilles rett fra telefonen. Ingenting kopieres eller lastes opp.</p>
 
-  <details class="card" id="settings">
-    <summary>Standardmappe</summary>
-    <div class="stack">
-      <div class="note">
-        Standardmappa kopieres inn i appen én gang. Da er den klar hver gang du åpner appen,
-        også uten nett. Sangene tar da plass to steder på telefonen.
-      </div>
-      <button class="btn full" id="pickStd">Velg standardmappe …</button>
-      <div id="importBox" class="hidden">
-        <progress id="importProg" max="1" value="0"></progress>
-        <div class="note" id="importText"></div>
-      </div>
-      <div class="note" id="storageInfo"></div>
-      <button class="btn full danger" id="clearStd">Fjern standardmappe fra appen</button>
-    </div>
-  </details>
-
-  <input type="file" id="dirStd" webkitdirectory multiple class="hidden">
-  <input type="file" id="dirTmp" webkitdirectory multiple class="hidden">
+  <input type="file" id="dir" webkitdirectory multiple class="hidden">
   <audio id="audio" preload="auto"></audio>
 
 <script>
 "use strict";
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -154,66 +129,12 @@ const $ = (id) => document.getElementById(id);
 const audio = $("audio");
 $("ver").textContent = "v" + VERSION;
 
-/* ---------- Lagring (IndexedDB) ---------- */
-const DB_NAME = "lopespiller";   // beholdt fra før navnebyttet, så lagret standardmappe ikke forsvinner
-let dbPromise = null;
-function db() {
-  if (!dbPromise) {
-    dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = () => {
-        const d = req.result;
-        d.createObjectStore("songs", { keyPath: "id" });   // metadata
-        d.createObjectStore("blobs", { keyPath: "id" });   // lydfiler
-        d.createObjectStore("meta");                       // bibliotekinfo
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-      setTimeout(() => reject(new Error("Lagring svarer ikke")), 4000);
-    });
-    dbPromise.catch(() => { dbPromise = null; });
-  }
-  return dbPromise;
-}
-function tx(stores, mode, fn) {
-  return db().then((d) => new Promise((resolve, reject) => {
-    const t = d.transaction(stores, mode);
-    let result;
-    Promise.resolve(fn(t)).then((r) => { result = r; });
-    t.oncomplete = () => resolve(result);
-    t.onerror = () => reject(t.error);
-    t.onabort = () => reject(t.error || new Error("Avbrutt"));
-  }));
-}
-function reqP(r) { return new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-
-async function loadLibrary() {
-  const d = await db();
-  const t = d.transaction(["songs", "meta"], "readonly");
-  const songs = await reqP(t.objectStore("songs").getAll());
-  const name = await reqP(t.objectStore("meta").get("name"));
-  return { name: name || "", songs };
-}
-async function getBlob(id) {
-  const d = await db();
-  const row = await reqP(d.transaction("blobs").objectStore("blobs").get(id));
-  return row ? row.blob : null;
-}
-async function clearLibrary() {
-  await tx(["songs", "blobs", "meta"], "readwrite", (t) => {
-    t.objectStore("songs").clear();
-    t.objectStore("blobs").clear();
-    t.objectStore("meta").clear();
-  });
-}
-
 /* ---------- Hjelpere ---------- */
 function audioFiles(fileList) {
   return Array.from(fileList).filter((f) => AUDIO_EXT.test(f.name) || (f.type && f.type.startsWith("audio/")));
 }
 function folderOf(f) {
-  const p = f.webkitRelativePath || "";
-  const parts = p.split("/");
+  const parts = (f.webkitRelativePath || "").split("/");
   return parts.length > 1 ? parts.slice(0, -1).join("/") : "";
 }
 function rootName(files) {
@@ -227,23 +148,20 @@ function fmt(s) {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
   return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(sec).padStart(2, "0");
 }
-function mb(bytes) { return (bytes / 1048576).toLocaleString("nb-NO", { maximumFractionDigits: 0 }) + " MB"; }
 function store(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
 function recall(key, def) { try { const v = localStorage.getItem(key); return v === null ? def : JSON.parse(v); } catch (e) { return def; } }
 function status(msg, err) { const s = $("status"); s.textContent = msg || ""; s.classList.toggle("err", !!err); }
 const collator = new Intl.Collator("nb", { numeric: true, sensitivity: "base" });
 
 /* ---------- Spillerstatus ---------- */
-let source = "std";          // "std" | "tmp"
-let stdLib = { name: "", songs: [] };
-let tracks = [];             // aktiv liste: {id, name, folder, file?}
+let folderName = "";
+let tracks = [];             // {name, folder, file}
 let order = [];              // indekser inn i tracks
 let pos = -1;                // posisjon i order
 let shuffleOn = recall("shuffle", true);
 let curUrl = null;
 let errorsInRow = 0;
 let loadToken = 0;
-let storageOK = true;       // false hvis nettleseren ikke gir appen lagring (f.eks. enkelte nedlastede filer)
 
 function buildOrder(keepCurrent) {
   const n = tracks.length;
@@ -252,7 +170,7 @@ function buildOrder(keepCurrent) {
   if (shuffleOn) {
     for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
   } else {
-    order.sort((a, b) => collator.compare((tracks[a].folder + "/" + tracks[a].name), (tracks[b].folder + "/" + tracks[b].name)));
+    order.sort((a, b) => collator.compare(tracks[a].folder + "/" + tracks[a].name, tracks[b].folder + "/" + tracks[b].name));
   }
   if (keepCurrent && current >= 0) {
     const k = order.indexOf(current);
@@ -263,49 +181,20 @@ function buildOrder(keepCurrent) {
   }
 }
 
-function setTracks(list, src) {
-  stop();
-  source = src;
-  tracks = list;
-  pos = -1;
-  buildOrder(false);
-  renderSource();
-  renderNow(null);
-}
-
 function renderSource() {
-  const tmp = source === "tmp";
-  $("srcLabel").textContent = !storageOK ? "Mappe" : (tmp ? "Midlertidig mappe" : "Standardmappe");
-  const name = tmp ? tmpName : (stdLib.name || "");
-  $("srcName").classList.toggle("tmp", tmp && storageOK);
-  if (!tracks.length) {
-    $("srcName").textContent = tmp ? "Ingen lydfiler i mappa" : (storageOK ? "Ikke valgt ennå" : "Trykk «Velg mappe …»");
-  } else {
-    $("srcName").textContent = name + " · " + tracks.length + " " + (tracks.length === 1 ? "sang" : "sanger");
-  }
-  $("backStd").classList.toggle("hidden", !tmp || !storageOK);
-  if (storageOK && !tracks.length && !tmp) $("settings").open = true;
+  $("srcName").textContent = tracks.length
+    ? folderName + " · " + tracks.length + " " + (tracks.length === 1 ? "sang" : "sanger")
+    : "Ingen mappe valgt";
 }
-
 function renderNow(t) {
-  $("title").textContent = t ? niceName(t.name) : (tracks.length ? "Trykk spill for å starte" : "Ingen sang");
+  $("title").textContent = t ? niceName(t.name) : (tracks.length ? "Trykk spill for å starte" : "Velg en mappe");
   $("sub").textContent = t ? (t.folder || "") : "";
   if (!t) { $("cur").textContent = "0:00"; $("dur").textContent = "0:00"; $("seek").value = 0; }
 }
-
 function setPlayIcon(playing) {
-  $("playIcon").innerHTML = playing
-    ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>'
-    : '<path d="M8 5v14l11-7z"/>';
+  $("playIcon").innerHTML = playing ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>';
   $("play").setAttribute("aria-label", playing ? "Pause" : "Spill");
   if ("mediaSession" in navigator) navigator.mediaSession.playbackState = playing ? "playing" : "paused";
-}
-
-async function urlFor(t) {
-  if (t.file) return URL.createObjectURL(t.file);
-  const blob = await getBlob(t.id);
-  if (!blob) throw new Error("Fant ikke filen i appens lagring");
-  return URL.createObjectURL(blob);
 }
 
 async function loadAt(newPos, autoplay) {
@@ -316,14 +205,13 @@ async function loadAt(newPos, autoplay) {
   const t = tracks[order[pos]];
   const token = ++loadToken;
   renderNow(t);
+  if (curUrl) URL.revokeObjectURL(curUrl);
+  curUrl = URL.createObjectURL(t.file);      // peker rett på filen på telefonen, ingen kopi
+  audio.src = curUrl;
+  updateMetadata(t);
+  if (!autoplay) return;
   try {
-    const url = await urlFor(t);
-    if (token !== loadToken) { URL.revokeObjectURL(url); return; }
-    if (curUrl) URL.revokeObjectURL(curUrl);
-    curUrl = url;
-    audio.src = url;
-    updateMetadata(t);
-    if (autoplay) await audio.play();
+    await audio.play();
     status("");
   } catch (e) {
     if (token !== loadToken) return;
@@ -340,7 +228,7 @@ function skipAfterError() {
 }
 
 function play() {
-  if (!tracks.length) { status("Velg en mappe først", true); return; }
+  if (!tracks.length) { $("dir").value = ""; $("dir").click(); return; }
   if (pos < 0 || !audio.src) { loadAt(0, true); return; }
   audio.play().catch(() => status("Trykk spill for å starte"));
 }
@@ -367,7 +255,7 @@ function updateMetadata(t) {
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: niceName(t.name),
-      artist: t.folder || (source === "tmp" ? tmpName : stdLib.name) || "Lommespiller",
+      artist: t.folder || folderName || "Lommespiller",
       album: "Lommespiller",
       artwork: [{ src: ICON, sizes: "192x192", type: "image/png" }]
     });
@@ -424,122 +312,29 @@ $("shuffle").addEventListener("click", () => {
   buildOrder(true);
 });
 
-/* Midlertidig mappe: brukes bare til appen lukkes eller du går tilbake */
-let tmpName = "";
-$("pickTmp").addEventListener("click", () => { $("dirTmp").value = ""; $("dirTmp").click(); });
-$("dirTmp").addEventListener("change", (e) => {
-  const files = audioFiles(e.target.files);
-  if (!e.target.files.length) return;
-  if (!files.length) { status("Fant ingen lydfiler i mappa", true); return; }
-  tmpName = rootName(files);
-  setTracks(files.map((f, i) => ({ id: "tmp" + i, name: f.name, folder: folderOf(f), file: f })), "tmp");
-  status((storageOK ? "Midlertidig mappe valgt." : "Mappe valgt.") + " Trykk spill.");
-});
-$("backStd").addEventListener("click", () => {
-  setTracks(stdLib.songs.slice(), "std");
-  status(stdLib.songs.length ? "Tilbake på standardmappa" : "");
-});
-
-/* Standardmappe: kopieres inn i appen */
-let importing = false;
-$("pickStd").addEventListener("click", () => { if (!importing) { $("dirStd").value = ""; $("dirStd").click(); } });
-$("dirStd").addEventListener("change", async (e) => {
+$("pick").addEventListener("click", () => { $("dir").value = ""; $("dir").click(); });
+$("dir").addEventListener("change", (e) => {
   if (!e.target.files.length) return;
   const files = audioFiles(e.target.files);
   if (!files.length) { status("Fant ingen lydfiler i mappa", true); return; }
-  const total = files.reduce((s, f) => s + f.size, 0);
-  try {
-    if (navigator.storage && navigator.storage.estimate) {
-      const est = await navigator.storage.estimate();
-      const free = (est.quota || 0) - (est.usage || 0) + (await librarySize());
-      if (est.quota && total > free) {
-        status("Ikke nok plass: mappa er " + mb(total) + ", appen kan bruke ca. " + mb(free), true);
-        return;
-      }
-    }
-    if (!confirm("Kopiere " + files.length + " sanger (" + mb(total) + ") inn i appen? Gammel standardmappe erstattes.")) return;
-    if (navigator.storage && navigator.storage.persist) { try { await navigator.storage.persist(); } catch (e2) {} }
-    await importLibrary(files, rootName(files));
-  } catch (err) {
-    status("Kopiering feilet: " + (err && err.message ? err.message : err), true);
-    importing = false; $("importBox").classList.add("hidden");
-  }
+  stop();
+  folderName = rootName(files);
+  tracks = files.map((f) => ({ name: f.name, folder: folderOf(f), file: f }));
+  pos = -1;
+  buildOrder(false);
+  renderSource();
+  renderNow(null);
+  status("Mappe valgt. Trykk spill.");
 });
-
-async function librarySize() { return stdLib.songs.reduce((s, x) => s + (x.size || 0), 0); }
-
-async function importLibrary(files, name) {
-  importing = true;
-  if (source === "std") stop();
-  $("importBox").classList.remove("hidden");
-  $("pickStd").disabled = true;
-  await clearLibrary();
-  stdLib = { name: "", songs: [] };
-  const prog = $("importProg");
-  prog.max = files.length; prog.value = 0;
-  let done = 0, bytes = 0;
-  for (const f of files) {
-    const id = (f.webkitRelativePath || f.name) + "|" + f.size;
-    const data = await f.arrayBuffer();                       // tving en ekte kopi
-    const blob = new Blob([data], { type: f.type || "audio/mpeg" });
-    const meta = { id, name: f.name, folder: folderOf(f), size: f.size };
-    await tx(["songs", "blobs"], "readwrite", (t) => {
-      t.objectStore("blobs").put({ id, blob });
-      t.objectStore("songs").put(meta);
-    });
-    stdLib.songs.push(meta);
-    done++; bytes += f.size;
-    prog.value = done;
-    $("importText").textContent = "Kopierer " + done + " av " + files.length + " · " + mb(bytes) + " av " + mb(files.reduce((s, x) => s + x.size, 0));
-  }
-  await tx(["meta"], "readwrite", (t) => { t.objectStore("meta").put(name, "name"); });
-  stdLib.name = name;
-  importing = false;
-  $("pickStd").disabled = false;
-  $("importBox").classList.add("hidden");
-  if (source === "std") setTracks(stdLib.songs.slice(), "std");
-  status("Standardmappe lagret: " + stdLib.songs.length + " sanger");
-  renderStorage();
-}
-
-$("clearStd").addEventListener("click", async () => {
-  if (importing) return;
-  if (!stdLib.songs.length) { status("Ingen standardmappe å fjerne"); return; }
-  if (!confirm("Fjerne standardmappa fra appen? Originalfilene på telefonen berøres ikke.")) return;
-  if (source === "std") stop();
-  await clearLibrary();
-  stdLib = { name: "", songs: [] };
-  if (source === "std") setTracks([], "std");
-  status("Standardmappa er fjernet fra appen");
-  renderStorage();
-});
-
-async function renderStorage() {
-  let txt = stdLib.songs.length ? "Lagret i appen: " + stdLib.songs.length + " sanger, " + mb(await librarySize()) + "." : "Ingen standardmappe lagret.";
-  try {
-    if (navigator.storage && navigator.storage.persisted && await navigator.storage.persisted()) txt += " Lagringen er beskyttet mot automatisk opprydding.";
-  } catch (e) {}
-  $("storageInfo").textContent = txt;
-}
 
 /* ---------- Oppstart ---------- */
-(async function init() {
-  renderShuffle();
-  if (!("webkitdirectory" in document.createElement("input"))) {
-    status("Nettleseren støtter ikke mappevalg. Oppdater Chrome.", true);
-  }
-  try {
-    stdLib = await loadLibrary();
-  } catch (e) {
-    storageOK = false;
-    stdLib = { name: "", songs: [] };
-    $("settings").classList.add("hidden");
-    $("pickTmp").textContent = "Velg mappe …";
-    status("Velg musikkmappa for å starte");
-  }
-  setTracks(stdLib.songs.slice(), "std");
-  if (storageOK) renderStorage();
-})();
+renderShuffle();
+renderSource();
+if (!("webkitdirectory" in document.createElement("input"))) {
+  status("Nettleseren støtter ikke mappevalg. Oppdater Chrome.", true);
+}
+// Rydd bort kopierte sanger fra v1.0–1.2 (standardmappe-funksjonen er fjernet)
+try { if (window.indexedDB) indexedDB.deleteDatabase("lopespiller"); } catch (e) {}
 
 if (IS_WEB && "serviceWorker" in navigator) {
   window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
