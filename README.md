@@ -1,5 +1,5 @@
 # Runlikehell.io
-Lommespiller (tidligere Løpespiller) – enkel musikkspiller: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, bruker ingen datatrafikk.
+Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, bruker ingen datatrafikk.
 
 **Versjon:** 1.4.0 · Side: https://kilemannen.github.io/Runlikehell.io/
 
