@@ -68,6 +68,7 @@
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .toggle[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
   .full { width: 100%; }
+  .install { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); margin-top: 6px; }
 
   .note { color: var(--muted); font-size: 13px; }
 
@@ -116,12 +117,17 @@
   <div class="status" id="status"></div>
   <p class="note" style="text-align:center;margin:0">Sangene spilles rett fra telefonen. Ingenting kopieres eller lastes opp.</p>
 
+  <div id="installBox" class="hidden">
+    <button class="btn full install" id="installBtn">📲 Installer på hjemskjermen</button>
+    <p class="note" id="installHint" style="text-align:center;margin:8px 0 0"></p>
+  </div>
+
   <input type="file" id="dir" webkitdirectory multiple class="hidden">
   <audio id="audio" preload="auto"></audio>
 
 <script>
 "use strict";
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -326,6 +332,32 @@ $("dir").addEventListener("change", (e) => {
   renderNow(null);
   status("Mappe valgt. Trykk spill.");
 });
+
+/* ---------- Installer som app ---------- */
+const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+let installEvent = null;
+function showInstall() {
+  if (!IS_WEB || standalone) return;            // allerede installert, eller åpnet som nedlastet fil
+  $("installBox").classList.remove("hidden");
+  $("installBtn").classList.toggle("hidden", !installEvent);
+  $("installHint").textContent = installEvent
+    ? "Gir kassettikon på hjemskjermen. Virker uten nett."
+    : "Installer: trykk ⋮ i Chrome og velg «Installer app» eller «Legg til på startskjermen».";
+}
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvent = e; showInstall(); });
+$("installBtn").addEventListener("click", async () => {
+  if (!installEvent) return;
+  installEvent.prompt();
+  try { await installEvent.userChoice; } catch (e) {}
+  installEvent = null;
+  showInstall();
+});
+window.addEventListener("appinstalled", () => {
+  installEvent = null;
+  $("installBox").classList.add("hidden");
+  status("Installert! Åpne Lommespiller fra hjemskjermen.");
+});
+showInstall();
 
 /* ---------- Oppstart ---------- */
 renderShuffle();
