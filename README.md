@@ -1,7 +1,7 @@
 # Runlikehell.io
 Musikkspiller for løpeturen: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, virker uten nett.
 
-**Versjon:** 1.0.0
+**Versjon:** 1.0.1
 
 ## Bruk
 1. Åpne siden i Chrome på Android (på wifi første gang).
@@ -10,6 +10,7 @@ Musikkspiller for løpeturen: shuffle fra en mappe på telefonen, styres med hea
 4. «Annen mappe …» spiller en mappe midlertidig uten å endre standardmappa.
 
 ## Versjoner
+- **1.0.1** – Nytt kassettikon på appen/snarveien.
 - **1.0.0** – Første versjon: standardmappe lagret i appen, midlertidig mappe, shuffle, headset-/låseskjermkontroll (Media Session), offline (service worker).
 
 Ved ny versjon: oppdater `VERSION` i både `index.html` og `sw.js`.
