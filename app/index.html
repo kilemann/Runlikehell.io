@@ -127,7 +127,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.4.0";
+const VERSION = "1.5.0";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -227,10 +227,15 @@ async function loadAt(newPos, autoplay) {
   }
 }
 
+let skipFor = -1;            // hvilken innlasting som alt har en hopp-over på vei
 function skipAfterError() {
+  // En fil som ikke kan spilles gir både avvist play() og error-hendelse. Hopp over bare én gang per innlasting.
+  const token = loadToken;
+  if (skipFor === token) return;
+  skipFor = token;
   errorsInRow++;
   if (errorsInRow >= Math.min(10, tracks.length)) { status("For mange filer som ikke kan spilles. Stoppet.", true); errorsInRow = 0; setPlayIcon(false); return; }
-  setTimeout(() => loadAt(pos + 1, true), 400);
+  setTimeout(() => { if (token === loadToken) loadAt(pos + 1, true); }, 400);   // ny mappe eller stopp i mellomtiden: ikke last noe
 }
 
 function play() {
