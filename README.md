@@ -1,7 +1,7 @@
 # Runlikehell.io
 Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, bruker ingen datatrafikk.
 
-**Versjon:** 1.4.0 · Side: https://kilemannen.github.io/Runlikehell.io/
+**Versjon:** 1.4.0 · Side: https://kilemann.github.io/Runlikehell.io/
 
 ## Oppbygging
 - `index.html` – forside med installasjonsinstruksjoner (nedlasting som fil er alternativ)
