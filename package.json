@@ -1,6 +1,6 @@
 {
   "name": "lommespiller",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "private": true,
   "description": "Lommespiller – enkel musikkspiller. Tester for appen og service worker.",
   "scripts": {

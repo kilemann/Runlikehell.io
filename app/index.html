@@ -91,6 +91,11 @@
     <span class="ver" id="ver"></span>
   </header>
 
+  <div class="card hidden" id="updateBox">
+    <div class="src-name">Ny versjon er klar</div>
+    <button class="btn full install" id="updateBtn">⟳ Oppdater nå</button>
+  </div>
+
   <section class="card">
     <div class="src-label">Mappe</div>
     <div class="src-name" id="srcName">Ingen mappe valgt</div>
@@ -154,7 +159,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.7.0";
+const VERSION = "1.7.1";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -601,8 +606,34 @@ if (!("webkitdirectory" in document.createElement("input"))) {
 // Rydd bort kopierte sanger fra v1.0–1.2 (standardmappe-funksjonen er fjernet)
 try { if (window.indexedDB) indexedDB.deleteDatabase("lopespiller"); } catch (e) {}
 
+/* ---------- Oppdatering: appen starter fra lagret kopi, ny versjon lastes ned i bakgrunnen ---------- */
+let reloading = false;
+function reloadForUpdate() { if (reloading) return; reloading = true; location.reload(); }
+$("updateBox").classList.add("hidden");
+$("updateBtn").addEventListener("click", reloadForUpdate);
+
 if (IS_WEB && "serviceWorker" in navigator) {
-  window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+  const sw = navigator.serviceWorker;
+  const hadController = !!sw.controller;   // ingen fra før = første installasjon, siden er alt ny
+  let swReg = null, lastCheck = 0;
+  if (sw.addEventListener) {
+    sw.addEventListener("controllerchange", () => {
+      if (!hadController) return;
+      // Ny versjon har tatt over. Last på nytt med en gang, men aldri midt i en sang.
+      if (audio.paused && !pending) reloadForUpdate();
+      else if ($("updateBox").classList.contains("hidden")) { $("updateBox").classList.remove("hidden"); log("Ny versjon er klar"); }
+    });
+  }
+  window.addEventListener("load", () => {
+    lastCheck = Date.now();
+    sw.register("sw.js").then((r) => { swReg = r; }).catch(() => {});
+  });
+  // Installert app kan ligge åpen i bakgrunnen i dagevis: se etter ny versjon når den hentes fram, maks én gang i timen
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !swReg || !swReg.update || Date.now() - lastCheck < 3600000) return;
+    lastCheck = Date.now();
+    try { const u = swReg.update(); if (u && u.catch) u.catch(() => {}); } catch (e) {}
+  });
 }
 </script>
 </body>
