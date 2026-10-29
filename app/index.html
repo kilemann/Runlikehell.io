@@ -68,6 +68,12 @@
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .toggle[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
   .full { width: 100%; }
+  details.card summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; }
+  details.card summary::after { content: "▾"; color: var(--muted); }
+  details[open].card summary::after { content: "▴"; }
+  .log { margin: 10px 0 12px; padding: 0; list-style: none; font-size: 14px; max-height: 50vh; overflow-y: auto; }
+  .log li { padding: 5px 0; border-bottom: 1px solid var(--line); word-break: break-word; }
+  .log li span { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
   .install { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); margin-top: 6px; }
 
   .note { color: var(--muted); font-size: 13px; }
@@ -114,8 +120,17 @@
     <button class="btn" id="pick">Velg mappe …</button>
   </section>
 
+  <button class="btn full toggle" id="autoResume" aria-pressed="true">↻ Fortsett automatisk: på</button>
+
   <div class="status" id="status"></div>
   <p class="note" style="text-align:center;margin:0">Sangene spilles rett fra telefonen. Ingenting kopieres eller lastes opp.</p>
+
+  <details class="card" id="logBox">
+    <summary>Hendelseslogg</summary>
+    <p class="note" style="margin:8px 0 0">Viser hva som stoppet eller byttet musikken. Nyeste øverst.</p>
+    <ol class="log" id="log"></ol>
+    <button class="btn full" id="clearLog">Tøm logg</button>
+  </details>
 
   <div id="installBox" class="hidden">
     <button class="btn full install" id="installBtn">📲 Installer på hjemskjermen</button>
@@ -127,7 +142,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.5.0";
+const VERSION = "1.6.0";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -158,6 +173,25 @@ function store(key, val) { try { localStorage.setItem(key, JSON.stringify(val));
 function recall(key, def) { try { const v = localStorage.getItem(key); return v === null ? def : JSON.parse(v); } catch (e) { return def; } }
 function status(msg, err) { const s = $("status"); s.textContent = msg || ""; s.classList.toggle("err", !!err); }
 const collator = new Intl.Collator("nb", { numeric: true, sensitivity: "base" });
+const escHtml = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const pad2 = (n) => String(n).padStart(2, "0");
+
+/* ---------- Hendelseslogg: hva stoppet eller byttet musikken ---------- */
+const LOG_MAX = 100;
+let logg = (() => { const v = recall("logg", []); return Array.isArray(v) ? v.filter((e) => e && typeof e.msg === "string") : []; })();
+function log(msg) {
+  const d = new Date();
+  logg.push({ t: pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()), msg: msg });
+  if (logg.length > LOG_MAX) logg.splice(0, logg.length - LOG_MAX);
+  store("logg", logg);
+  renderLog();
+}
+function renderLog() {
+  $("log").innerHTML = logg.length
+    ? logg.slice().reverse().map((e) => "<li><span>" + escHtml(e.t) + "</span>" + escHtml(e.msg) + "</li>").join("")
+    : "<li>Ingen hendelser ennå.</li>";
+}
+const SRC = { app: "app-knapp", headset: "headset/låseskjerm" };
 
 /* ---------- Spillerstatus ---------- */
 let folderName = "";
@@ -168,6 +202,10 @@ let shuffleOn = recall("shuffle", true);
 let curUrl = null;
 let errorsInRow = 0;
 let loadToken = 0;
+let pauseReason = null;      // hvem som ba om neste pause-hendelse. Ingen = Android stoppet lyden
+let autoResumeOn = recall("autoResume", true);
+let autoTimer = null;        // venter på å fortsette etter Android-pause
+let autoTimes = [];          // når appen har fortsatt automatisk (maks 3 på 5 min)
 
 function buildOrder(keepCurrent) {
   const n = tracks.length;
@@ -211,6 +249,8 @@ async function loadAt(newPos, autoplay) {
   const t = tracks[order[pos]];
   const token = ++loadToken;
   renderNow(t);
+  log("Ny sang: " + niceName(t.name));
+  if (!audio.paused) pauseReason = "bytte";
   if (curUrl) URL.revokeObjectURL(curUrl);
   curUrl = URL.createObjectURL(t.file);      // peker rett på filen på telefonen, ingen kopi
   audio.src = curUrl;
@@ -222,9 +262,15 @@ async function loadAt(newPos, autoplay) {
   } catch (e) {
     if (token !== loadToken) return;
     if (e && e.name === "NotAllowedError") { status("Trykk spill for å starte"); return; }
-    status("Kunne ikke spille «" + t.name + "», hopper over", true);
-    skipAfterError();
+    fileFailed(t, e && e.name);
   }
+}
+
+function currentTrack() { return pos >= 0 && order[pos] !== undefined ? tracks[order[pos]] : null; }
+function fileFailed(t, why) {
+  log("Filfeil: " + t.name + " (" + (why || "ukjent") + ")");
+  status("Kunne ikke spille «" + t.name + "», hopper over", true);
+  skipAfterError();
 }
 
 let skipFor = -1;            // hvilken innlasting som alt har en hopp-over på vei
@@ -238,20 +284,38 @@ function skipAfterError() {
   setTimeout(() => { if (token === loadToken) loadAt(pos + 1, true); }, 400);   // ny mappe eller stopp i mellomtiden: ikke last noe
 }
 
-function play() {
+function play(src) {
+  cancelAutoResume();
   if (!tracks.length) { $("dir").value = ""; $("dir").click(); return; }
+  if (src) log("Spill (" + SRC[src] + ")");
   if (pos < 0 || !audio.src) { loadAt(0, true); return; }
-  audio.play().catch(() => status("Trykk spill for å starte"));
+  const t = currentTrack(), token = loadToken;
+  audio.play().then(() => status("")).catch((e) => {
+    if (token !== loadToken) return;
+    if (e && e.name === "NotAllowedError") { status("Trykk spill for å starte"); return; }
+    if (t) fileFailed(t, e && e.name);     // f.eks. filen kan ikke lenger leses: gå videre i stedet for å stå stille
+  });
 }
-function pause() { audio.pause(); }
-function toggle() { audio.paused ? play() : pause(); }
-function next() { if (tracks.length) loadAt(pos + 1, true); }
-function prev() {
+function pause(src) {
+  cancelAutoResume();
+  if (!audio.paused) { pauseReason = src || "app"; if (src) log("Pause (" + SRC[src] + ")"); }
+  audio.pause();
+}
+function toggle() { audio.paused ? play("app") : pause("app"); }
+function next(src) {
   if (!tracks.length) return;
+  if (src) log("Neste (" + SRC[src] + ")");
+  loadAt(pos + 1, true);
+}
+function prev(src) {
+  if (!tracks.length) return;
+  if (src) log("Forrige (" + SRC[src] + ")");
   if (audio.currentTime > 3 || pos <= 0) { audio.currentTime = 0; if (audio.paused) play(); return; }
   loadAt(pos - 1, true);
 }
 function stop() {
+  cancelAutoResume();
+  if (!audio.paused) pauseReason = "bytte";
   loadToken++;
   audio.pause();
   audio.removeAttribute("src");
@@ -284,22 +348,82 @@ function updatePosition() {
 }
 if ("mediaSession" in navigator) {
   const h = (a, fn) => { try { navigator.mediaSession.setActionHandler(a, fn); } catch (e) {} };
-  h("play", play);
-  h("pause", pause);
-  h("stop", pause);
-  h("nexttrack", next);
-  h("previoustrack", prev);
+  h("play", () => play("headset"));
+  h("pause", () => pause("headset"));
+  h("stop", () => pause("headset"));
+  h("nexttrack", () => next("headset"));
+  h("previoustrack", () => prev("headset"));
   h("seekto", (d) => { if (d.seekTime != null) { audio.currentTime = d.seekTime; updatePosition(); } });
   h("seekforward", (d) => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (d.seekOffset || 10)); updatePosition(); });
   h("seekbackward", (d) => { audio.currentTime = Math.max(0, audio.currentTime - (d.seekOffset || 10)); updatePosition(); });
 }
 
 /* ---------- Lydhendelser ---------- */
-audio.addEventListener("play", () => setPlayIcon(true));
+audio.addEventListener("play", () => { pauseReason = null; setPlayIcon(true); });
 audio.addEventListener("playing", () => { errorsInRow = 0; });
-audio.addEventListener("pause", () => setPlayIcon(false));
+audio.addEventListener("pause", () => {
+  setPlayIcon(false);
+  const reason = pauseReason; pauseReason = null;
+  if (reason || audio.ended || !audio.getAttribute("src")) return;
+  // Verken appen eller headsettet ba om pause: Android stoppet lyden (Bluetooth-brudd, annen app, varsel)
+  log("Stoppet av Android (Bluetooth-brudd eller annen lyd)");
+  scheduleAutoResume();
+});
 audio.addEventListener("ended", () => next());
-audio.addEventListener("error", () => { if (audio.getAttribute("src")) { status("Filen kan ikke spilles, hopper over", true); skipAfterError(); } });
+audio.addEventListener("error", () => {
+  if (!audio.getAttribute("src")) return;
+  const t = currentTrack();
+  if (t && skipFor !== loadToken) log("Filfeil: " + t.name + " (kode " + ((audio.error && audio.error.code) || "ukjent") + ")");
+  status("Filen kan ikke spilles, hopper over", true);
+  skipAfterError();
+});
+
+/* ---------- Fortsett automatisk når Android stopper musikken ---------- */
+function cancelAutoResume() { if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; } }
+function scheduleAutoResume() {
+  cancelAutoResume();
+  if (!autoResumeOn) return;
+  const now = Date.now();
+  autoTimes = autoTimes.filter((x) => now - x < 5 * 60000);
+  if (autoTimes.length >= 3) {
+    // Sikring: kobles headsettet fra for godt, skal ikke musikken fortsette på høyttaleren igjen og igjen
+    log("Fortsetter ikke automatisk (stoppet 3 ganger på 5 min)");
+    status("Android stoppet musikken flere ganger. Trykk spill for å fortsette.", true);
+    return;
+  }
+  const token = loadToken;
+  autoTimer = setTimeout(() => {
+    autoTimer = null;
+    if (token !== loadToken || !audio.paused || !audio.getAttribute("src")) return;
+    autoTimes.push(Date.now());
+    audio.play().then(() => log("Fortsatte automatisk")).catch((e) => log("Klarte ikke å fortsette automatisk (" + ((e && e.name) || "ukjent") + ")"));
+  }, 2000);
+}
+function renderAuto() {
+  $("autoResume").setAttribute("aria-pressed", String(autoResumeOn));
+  $("autoResume").textContent = "↻ Fortsett automatisk: " + (autoResumeOn ? "på" : "av");
+}
+$("autoResume").addEventListener("click", () => {
+  autoResumeOn = !autoResumeOn; store("autoResume", autoResumeOn); renderAuto();
+  if (!autoResumeOn) cancelAutoResume();
+});
+$("clearLog").addEventListener("click", () => { logg = []; store("logg", logg); renderLog(); });
+
+/* ---------- Vakthund: sang som henger (tiden står stille mens den skal spille) ---------- */
+const HANG_MS = 10000;
+let lastT = -1, lastMove = 0;
+setInterval(() => {
+  if (audio.paused || seeking || !audio.getAttribute("src") || !tracks.length) { lastT = -1; return; }
+  const now = Date.now();
+  if (audio.currentTime !== lastT) { lastT = audio.currentTime; lastMove = now; return; }
+  if (now - lastMove < HANG_MS) return;
+  const t = currentTrack();
+  lastT = -1;
+  if (!t) return;
+  log("Henger: " + t.name + ", hopper over");
+  status("«" + t.name + "» henger, hopper over", true);
+  skipAfterError();          // via feiltelleren, så en mappe der alt henger ikke går i ring
+}, 1000);
 audio.addEventListener("loadedmetadata", () => { $("dur").textContent = fmt(audio.duration); updatePosition(); });
 let seeking = false;
 audio.addEventListener("timeupdate", () => {
@@ -314,8 +438,8 @@ $("seek").addEventListener("change", () => {
 
 /* ---------- Knapper ---------- */
 $("play").addEventListener("click", toggle);
-$("next").addEventListener("click", next);
-$("prev").addEventListener("click", prev);
+$("next").addEventListener("click", () => next("app"));
+$("prev").addEventListener("click", () => prev("app"));
 
 function renderShuffle() { $("shuffle").setAttribute("aria-pressed", String(shuffleOn)); $("shuffle").textContent = shuffleOn ? "⤮ Shuffle på" : "→ Shuffle av"; }
 $("shuffle").addEventListener("click", () => {
@@ -335,6 +459,7 @@ $("dir").addEventListener("change", (e) => {
   buildOrder(false);
   renderSource();
   renderNow(null);
+  log("Mappe valgt: " + folderName + " (" + tracks.length + " " + (tracks.length === 1 ? "sang" : "sanger") + ")");
   status("Mappe valgt. Trykk spill.");
 });
 
@@ -366,6 +491,8 @@ showInstall();
 
 /* ---------- Oppstart ---------- */
 renderShuffle();
+renderAuto();
+renderLog();
 renderSource();
 if (!("webkitdirectory" in document.createElement("input"))) {
   status("Nettleseren støtter ikke mappevalg. Oppdater Chrome.", true);

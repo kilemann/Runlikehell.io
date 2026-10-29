@@ -8,6 +8,7 @@ const NAMES = [
   'VERSION', 'IS_WEB', 'AUDIO_EXT', 'audioFiles', 'folderOf', 'rootName', 'niceName', 'fmt', 'store', 'recall', 'status',
   'tracks', 'order', 'pos', 'shuffleOn', 'errorsInRow', 'curUrl', 'folderName',
   'buildOrder', 'loadAt', 'skipAfterError', 'play', 'pause', 'toggle', 'next', 'prev', 'stop', 'showInstall',
+  'logg',
 ];
 
 /* Simulert lydelement. `fail(filnavn)` kan returnere et feilnavn som play() avviser med. */
