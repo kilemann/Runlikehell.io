@@ -74,6 +74,8 @@
   .log { margin: 10px 0 12px; padding: 0; list-style: none; font-size: 14px; max-height: 50vh; overflow-y: auto; }
   .log li { padding: 5px 0; border-bottom: 1px solid var(--line); word-break: break-word; }
   .log li span { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+  .stack { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+  .sel { width: 100%; min-height: 52px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; padding: 0 12px; }
   .install { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); margin-top: 6px; }
 
   .note { color: var(--muted); font-size: 13px; }
@@ -125,6 +127,16 @@
   <div class="status" id="status"></div>
   <p class="note" style="text-align:center;margin:0">Sangene spilles rett fra telefonen. Ingenting kopieres eller lastes opp.</p>
 
+  <details class="card" id="voiceBox">
+    <summary>Stemme</summary>
+    <div class="stack">
+      <p class="note" style="margin:0">Sier «Pause», «Resume» og «Next» når du trykker på headsettet. Bruker telefonens egen talestemme, uten nett.</p>
+      <button class="btn full toggle" id="voiceOn" aria-pressed="true">🗣 Stemme: på</button>
+      <select class="sel" id="voiceSel" aria-label="Velg stemme"></select>
+      <button class="btn full" id="voiceTest">▶ Test stemme</button>
+    </div>
+  </details>
+
   <details class="card" id="logBox">
     <summary>Hendelseslogg</summary>
     <p class="note" style="margin:8px 0 0">Viser hva som stoppet eller byttet musikken. Nyeste øverst.</p>
@@ -142,7 +154,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.6.0";
+const VERSION = "1.7.0";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -285,6 +297,7 @@ function skipAfterError() {
 }
 
 function play(src) {
+  flushPending();
   cancelAutoResume();
   if (!tracks.length) { $("dir").value = ""; $("dir").click(); return; }
   if (src) log("Spill (" + SRC[src] + ")");
@@ -297,23 +310,27 @@ function play(src) {
   });
 }
 function pause(src) {
+  flushPending();
   cancelAutoResume();
   if (!audio.paused) { pauseReason = src || "app"; if (src) log("Pause (" + SRC[src] + ")"); }
   audio.pause();
 }
 function toggle() { audio.paused ? play("app") : pause("app"); }
 function next(src) {
+  flushPending();
   if (!tracks.length) return;
   if (src) log("Neste (" + SRC[src] + ")");
   loadAt(pos + 1, true);
 }
 function prev(src) {
+  flushPending();
   if (!tracks.length) return;
   if (src) log("Forrige (" + SRC[src] + ")");
   if (audio.currentTime > 3 || pos <= 0) { audio.currentTime = 0; if (audio.paused) play(); return; }
   loadAt(pos - 1, true);
 }
 function stop() {
+  dropPending();
   cancelAutoResume();
   if (!audio.paused) pauseReason = "bytte";
   loadToken++;
@@ -323,6 +340,89 @@ function stop() {
   if (curUrl) { URL.revokeObjectURL(curUrl); curUrl = null; }
   setPlayIcon(false);
 }
+
+/* ---------- Talestemme: «Pause», «Resume», «Next» ved trykk på headsettet ---------- */
+const synth = window.speechSynthesis;
+const HAS_VOICE = !!synth && typeof SpeechSynthesisUtterance !== "undefined";
+const FEMALE = /female|kvinne|samantha|zira|jenny|aria|libby|sonia|susan|karen|moira|tessa|serena|fiona|victoria|hazel|emma|amy/i;
+let voiceOn = recall("voice", true);
+let voiceName = recall("voiceName", "");
+let pending = null;          // kommando som venter på at stemmen blir ferdig: { run, drop }
+
+function englishVoices() {
+  if (!HAS_VOICE) return [];
+  try { return Array.from(synth.getVoices() || []).filter((v) => /^en/i.test(v.lang || "")); } catch (e) { return []; }
+}
+function autoVoice() { const en = englishVoices(); return en.find((v) => FEMALE.test(v.name)) || en[0] || null; }
+function pickVoice() { return (voiceName && englishVoices().find((v) => v.name === voiceName)) || autoVoice(); }
+function flushPending() { const p = pending; pending = null; if (p) p.run(); }
+function dropPending() { const p = pending; pending = null; if (p) p.drop(); }
+
+/* Si et ord, og kjør `then` når stemmen er ferdig, feiler, eller senest etter 1,5 s. Kommandoen utføres alltid. */
+function say(word, then, force) {
+  flushPending();
+  if (!HAS_VOICE || !(voiceOn || force)) { if (then) then(); return; }
+  let done = false, timer = null;
+  const end = (runThen) => {
+    if (done) return;
+    done = true;
+    if (timer) clearTimeout(timer);
+    if (pending === p) pending = null;
+    if (runThen && then) then();
+  };
+  const p = { run: () => end(true), drop: () => end(false) };
+  pending = p;
+  try {
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(word);
+    const v = pickVoice();
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = "en-US";
+    u.rate = 0.9; u.pitch = 1; u.volume = 1;
+    u.onend = () => end(true);
+    u.onerror = (e) => {
+      const why = (e && e.error) || "ukjent";
+      if (why !== "interrupted" && why !== "canceled") log("Stemme feilet (" + why + ")");
+      end(true);
+    };
+    timer = setTimeout(() => end(true), 1500);
+    synth.speak(u);
+  } catch (e) { end(true); }
+}
+
+/* Headsettet. Musikk og stemme overlapper aldri, så Android ikke stopper musikken for å slippe stemmen til. */
+function headsetPause() {
+  flushPending();
+  const wasPlaying = !audio.paused;
+  pause("headset");
+  if (wasPlaying) say("Pause");
+}
+function headsetPlay() {
+  flushPending();
+  if (!audio.paused || !tracks.length) { play("headset"); return; }
+  const first = pos < 0 || !audio.getAttribute("src");
+  say(first ? "Play" : "Resume", () => play("headset"));
+}
+function headsetNext() {
+  flushPending();
+  if (!tracks.length) return;
+  if (HAS_VOICE && voiceOn && !audio.paused) { pauseReason = "bytte"; audio.pause(); }
+  say("Next", () => next("headset"));
+}
+
+function renderVoice() {
+  $("voiceBox").classList.toggle("hidden", !HAS_VOICE);
+  if (!HAS_VOICE) return;
+  $("voiceOn").setAttribute("aria-pressed", String(voiceOn));
+  $("voiceOn").textContent = "🗣 Stemme: " + (voiceOn ? "på" : "av");
+  const auto = autoVoice();
+  $("voiceSel").innerHTML = '<option value="">Automatisk' + (auto ? " (" + escHtml(auto.name) + ")" : "") + "</option>" +
+    englishVoices().map((v) => '<option value="' + escHtml(v.name) + '"' + (v.name === voiceName ? " selected" : "") + ">" +
+      escHtml(v.name) + " · " + escHtml(v.lang) + "</option>").join("");
+}
+$("voiceOn").addEventListener("click", () => { voiceOn = !voiceOn; store("voice", voiceOn); renderVoice(); });
+$("voiceSel").addEventListener("change", () => { voiceName = $("voiceSel").value || ""; store("voiceName", voiceName); });
+$("voiceTest").addEventListener("click", () => say("Resume", null, true));
+if (HAS_VOICE) { try { synth.addEventListener("voiceschanged", renderVoice); } catch (e) {} }
 
 /* ---------- Media Session: låseskjerm + headset ---------- */
 function updateMetadata(t) {
@@ -348,10 +448,10 @@ function updatePosition() {
 }
 if ("mediaSession" in navigator) {
   const h = (a, fn) => { try { navigator.mediaSession.setActionHandler(a, fn); } catch (e) {} };
-  h("play", () => play("headset"));
-  h("pause", () => pause("headset"));
-  h("stop", () => pause("headset"));
-  h("nexttrack", () => next("headset"));
+  h("play", headsetPlay);
+  h("pause", headsetPause);
+  h("stop", headsetPause);
+  h("nexttrack", headsetNext);
   h("previoustrack", () => prev("headset"));
   h("seekto", (d) => { if (d.seekTime != null) { audio.currentTime = d.seekTime; updatePosition(); } });
   h("seekforward", (d) => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (d.seekOffset || 10)); updatePosition(); });
@@ -492,6 +592,7 @@ showInstall();
 /* ---------- Oppstart ---------- */
 renderShuffle();
 renderAuto();
+renderVoice();
 renderLog();
 renderSource();
 if (!("webkitdirectory" in document.createElement("input"))) {
