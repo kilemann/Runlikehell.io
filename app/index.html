@@ -83,12 +83,33 @@
   .status { font-size: 14px; color: var(--muted); text-align: center; min-height: 1.4em; }
   .status.err { color: #ff8a8a; }
   .hidden { display: none !important; }
+
+/* ---- Navn, versjon og info-knapp (som i Himmelur) ---- */
+.ai-row{display:flex;align-items:center;gap:12px;min-width:0}
+.ai-ver{font:500 11px ui-monospace,monospace;color:var(--muted);margin-left:6px;vertical-align:super;letter-spacing:0;text-transform:none;white-space:nowrap}
+.ai-btn{all:unset;box-sizing:border-box;cursor:pointer;flex:none;width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line);
+  display:grid;place-items:center;font:700 16px system-ui,sans-serif;color:var(--muted);background:var(--panel)}
+.ai-btn:hover{border-color:var(--accent);color:var(--accent)} .ai-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ai-modal{position:fixed;inset:0;z-index:1000;background:rgba(8,12,24,.6);display:grid;place-items:center;
+  padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.ai-modal[hidden]{display:none!important}
+.ai-box{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:16px;width:100%;max-width:580px;max-height:100%;overflow:auto;
+  box-sizing:border-box;padding:18px 22px 22px;box-shadow:0 24px 70px rgba(0,0,0,.35);text-align:left;font-family:inherit}
+.ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.ai-head h2{margin:0;font:700 22px/1.2 system-ui,sans-serif;text-transform:none;letter-spacing:0;color:var(--text)}
+.ai-close{all:unset;box-sizing:border-box;cursor:pointer;width:38px;height:38px;border-radius:10px;border:1px solid var(--line);display:grid;place-items:center;font-size:17px;color:var(--text)}
+.ai-close:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ai-box h3{font:700 15px/1.3 system-ui,sans-serif;margin:16px 0 6px;color:var(--text);text-transform:none;letter-spacing:0}
+.ai-box p,.ai-box li{font-size:14px;line-height:1.55;max-width:65ch}
+.ai-box p{margin:0 0 8px} .ai-box ul{margin:0 0 8px;padding-left:20px}
+.ai-box a{color:var(--accent)}
+.ai-vlog{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13.5px;line-height:1.5}
+.ai-vlog b{font:500 13px ui-monospace,monospace;white-space:nowrap}
 </style>
 </head>
 <body>
   <header>
-    <h1>Lommespiller</h1>
-    <span class="ver" id="ver"></span>
+    <div class="ai-row"><h1>Lommespiller<span class="ai-ver" id="ver"></span></h1><button type="button" class="ai-btn" id="aiBtn" aria-label="Om appen og hjelp" title="Om appen og hjelp" aria-haspopup="dialog">i</button></div>
   </header>
 
   <div class="card hidden" id="updateBox">
@@ -154,12 +175,50 @@
     <p class="note" id="installHint" style="text-align:center;margin:8px 0 0"></p>
   </div>
 
+
+<div class="ai-modal" id="aiInfo" hidden>
+  <div class="ai-box" role="dialog" aria-modal="true" aria-labelledby="aiTitle">
+    <div class="ai-head"><h2 id="aiTitle">Om Lommespiller</h2><button type="button" class="ai-close" id="aiClose" aria-label="Lukk">✕</button></div>
+    <h3>Slik bruker du appen</h3>
+    <ul>
+      <li>Trykk <b>Velg mappe …</b> og velg musikkmappa. Undermapper blir også med.</li>
+      <li>Trykk <b>▶</b>. Med <b>Shuffle</b> på blandes sangene, ellers spilles de i rekkefølge etter mappe og navn.</li>
+      <li><b>Forrige</b> starter sangen på nytt hvis den har spilt mer enn 3 sekunder, ellers går den til forrige sang.</li>
+      <li>Lås skjermen og putt telefonen i lomma. Musikken spiller videre.</li>
+    </ul>
+    <h3>Headset og låseskjerm</h3>
+    <p>Pause, neste og forrige styres fra headsettet, låseskjermen og varslingsfeltet. Hvilket tapp som gjør hva, bestemmes av headsettet.</p>
+    <p>Under <b>Stemme</b> kan du slå på en talestemme som sier «Pause», «Resume» og «Next» når du trykker på headsettet. Den bruker telefonens egen talesyntese, uten nett.</p>
+    <h3>Fortsett automatisk</h3>
+    <p>Stopper Android musikken (Bluetooth-brudd, annen app eller varsel), fortsetter den av seg selv etter 2 sekunder, maks 3 ganger på 5 minutter. Kan slås av. <b>Hendelseslogg</b> viser hva som stoppet eller byttet musikken.</p>
+    <h3>Personvern og nett</h3>
+    <p>Sangene spilles rett fra telefonen. Ingenting kopieres eller lastes opp, og appen bruker ingen datatrafikk etter at den er installert. Mappa må velges på nytt hver gang appen åpnes.</p>
+    <p>Stopper musikken av seg selv? Slå av batterioptimalisering for Chrome i Android-innstillingene.</p>
+    <h3>Versjoner</h3>
+    <div class="ai-vlog">
+        <b>v1.8.0</b><span>Navn, versjon og info-knapp øverst til venstre, som i de andre appene.</span>
+        <b>v1.7.2</b><span>Feilrettinger: pause rett etter «neste» ble tolket som ødelagt fil, og en oppdatering kunne laste appen på nytt under pause.</span>
+        <b>v1.7.1</b><span>Ny versjon vises med en gang etter oppdatering.</span>
+        <b>v1.7.0</b><span>Talestemme ved trykk på headsettet.</span>
+        <b>v1.6.0</b><span>Musikken fortsetter automatisk når Android stopper den. Hendelseslogg.</span>
+        <b>v1.5.0</b><span>To feil med hopp over ødelagte sanger rettet. Automatiske tester.</span>
+        <b>v1.4.0</b><span>Installasjon som app er hovedvalget.</span>
+        <b>v1.3.0</b><span>Ingenting kopieres lenger, sangene spilles rett fra mappa.</span>
+        <b>v1.2.0</b><span>Nytt navn: Lommespiller (tidligere Løpespiller).</span>
+        <b>v1.1.1</b><span>Rydder bort gammel installasjon.</span>
+        <b>v1.1.0</b><span>Nedlastingsside, spilleren virker som enkeltfil.</span>
+        <b>v1.0.1</b><span>Nytt kassettikon.</span>
+        <b>v1.0.0</b><span>Første versjon.</span>
+    </div>
+  </div>
+</div>
+
   <input type="file" id="dir" webkitdirectory multiple class="hidden">
   <audio id="audio" preload="auto"></audio>
 
 <script>
 "use strict";
-const VERSION = "1.7.2";
+const VERSION = "1.8.0";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -645,6 +704,18 @@ if (IS_WEB && "serviceWorker" in navigator) {
     try { const u = swReg.update(); if (u && u.catch) u.catch(() => {}); } catch (e) {}
   });
 }
+
+/* Info-vindu: (i) åpner, ✕, klikk utenfor eller Esc lukker */
+(function(){
+  var b = document.getElementById("aiBtn"), m = document.getElementById("aiInfo"), c = document.getElementById("aiClose");
+  if (!b || !m || !c) return;
+  function open(){ m.hidden = false; b.setAttribute("aria-expanded", "true"); c.focus(); }
+  function close(){ m.hidden = true; b.setAttribute("aria-expanded", "false"); b.focus(); }
+  b.addEventListener("click", open);
+  c.addEventListener("click", close);
+  m.addEventListener("click", function(e){ if (e.target === m) close(); });
+  document.addEventListener("keydown", function(e){ if (e.key === "Escape" && !m.hidden) close(); });
+})();
 </script>
 </body>
 </html>

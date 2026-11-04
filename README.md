@@ -1,7 +1,7 @@
 # Runlikehell.io
 Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, bruker ingen datatrafikk.
 
-**Versjon:** 1.7.2 · Side: https://kilemann.github.io/Runlikehell.io/
+**Versjon:** 1.8.0 · Side: https://kilemann.github.io/Runlikehell.io/
 
 ## Oppbygging
 - `index.html` – forside med installasjonsinstruksjoner (nedlasting som fil er alternativ)
@@ -9,6 +9,7 @@ Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres
 - `app/index.html` – selve spilleren. Lastes ned som `Lommespiller.html` og virker som enkeltfil, eller brukes som installerbar app (PWA) med `sw.js` og `manifest.webmanifest`
 
 ## Versjoner
+- **1.8.0** – Navn, versjon og info-knapp (i) øverst til venstre, med bruksanvisning og versjonsliste.
 - **1.7.2** – Feilrettinger etter kodegjennomgang: pause rett etter «neste» eller «spill» ble tolket som ødelagt fil, så sangen ble hoppet over og musikken startet igjen. En oppdatering kunne laste appen på nytt mens du hadde pause og fjerne mappevalget; nå vises «Oppdater nå» i stedet når en mappe er valgt. Ny versjon henter ferske filer forbi nettleserbufferen, så den ikke kan lagre forrige versjons filer. Shuffle spiller ikke samme sang to ganger på rad ved ny runde. Telefon som nekter å starte musikken logges. Spoling framover før sangens lengde er kjent gjør ingenting.
 - **1.7.1** – Retter at appen viste forrige versjon første gang etter en oppdatering. Når ny versjon er lastet ned, lastes siden på nytt med en gang hvis musikken ikke spiller; spiller den, vises «Oppdater nå» i stedet, så sangen ikke avbrytes. Installert app ser etter ny versjon når den hentes fram, maks én gang i timen.
 - **1.7.0** – Talestemme: en myk engelsk damestemme sier «Pause», «Resume» og «Next» (og «Play» ved første start) når du trykker på headsettet. Bruker telefonens egen talesyntese, uten nett. Musikk og stemme overlapper aldri, og kommandoen utføres alltid, senest etter 1,5 s, selv om stemmen ikke svarer. Stemmen kan slås av og velges selv under «Stemme». Knappene i appen gir ingen stemme.
