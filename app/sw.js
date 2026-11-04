@@ -1,6 +1,6 @@
 // Lommespiller service worker – gjør appen tilgjengelig uten nett.
 // Bytt versjonsnummeret ved hver ny versjon, så hentes de nye filene.
-const VERSION = "1.7.1";
+const VERSION = "1.7.2";
 const CACHE = "lopespiller-" + VERSION;   // prefiks beholdt fra før navnebyttet
 const FILES = [
   "./",
@@ -11,7 +11,8 @@ const FILES = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  // cache: "reload" henter ferske filer forbi nettleserbufferen, så ny versjon aldri lagrer forrige versjons filer
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {

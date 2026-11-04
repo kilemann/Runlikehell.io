@@ -216,3 +216,31 @@ test('Ødelagt logg i lagring gir tom logg, ikke krasj', () => {
   const l = ny({ storage: { logg: '{ikke json' } });
   assert.deepEqual([...l.api.logg].map(e => e.msg), ['Mappe valgt: Musikk (3 sanger)'], 'bare den nye linja');
 });
+
+/* ---------- 1.7.2: avbrutt play() er ikke en ødelagt fil ---------- */
+test('Pause rett etter neste (play avbrytes med AbortError): ingen hopp-over, musikken forblir pauset', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env);
+  const ekte = l.audio.play.bind(l.audio);
+  let avbryt;
+  l.audio.play = function () { this.playLog.push(this.fileName); return new Promise((_, rej) => { avbryt = rej; }); };
+  l.env.el('next').click();                 // neste sang lastes, play() venter
+  l.env.el('play').click();                 // du trykker pause før den rakk å starte
+  avbryt(Object.assign(new Error('avbrutt av pause()'), { name: 'AbortError' }));   // slik Chrome svarer
+  l.audio.play = ekte;
+  await run(l.env, 1000);
+  assert.equal(spilt(l), 'b.mp3');
+  assert.equal(l.audio.paused, true);
+  assert.ok(!logg(l).some(m => m.startsWith('Filfeil')));
+});
+
+test('Shuffle: ny runde starter ikke med samme sang som forrige runde sluttet med', async () => {
+  for (let i = 0; i < 20; i++) {
+    const l = ny({ storage: { shuffle: 'true' } });
+    l.env.el('play').click(); await run(l.env);
+    for (let k = 0; k < 2; k++) { l.env.el('next').click(); await run(l.env); }
+    const sist = spilt(l);
+    l.env.el('next').click(); await run(l.env);
+    assert.notEqual(spilt(l), sist);
+  }
+});

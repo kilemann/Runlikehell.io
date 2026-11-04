@@ -91,3 +91,13 @@ test('Nedlastet fil (ikke fra nettet) lytter ikke etter oppdateringer', () => {
   load({ location: { protocol: 'file:' }, navigator: { onLine: true, serviceWorker: sw } });
   assert.equal(lyttet, 0);
 });
+
+test('Ny versjon mens mappe er valgt og musikken står på pause: mappevalget beholdes, «Oppdater nå» vises', async () => {
+  const l = ny();
+  pickFolder(l.env, ['M/a.mp3', 'M/b.mp3']);
+  l.env.el('play').click(); await run(l.env);
+  l.env.el('play').click();
+  l.takeOver();
+  assert.equal(l.loc.reloads, 0);
+  assert.equal(skjult(l, 'updateBox'), false);
+});

@@ -159,7 +159,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.7.1";
+const VERSION = "1.7.2";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -260,7 +260,11 @@ function setPlayIcon(playing) {
 
 async function loadAt(newPos, autoplay) {
   if (!tracks.length) return;
-  if (newPos >= order.length) { buildOrder(false); newPos = 0; }   // ny runde, ny blanding
+  if (newPos >= order.length) {                                    // ny runde, ny blanding
+    const last = order[order.length - 1];
+    buildOrder(false); newPos = 0;
+    if (shuffleOn && order.length > 1 && order[0] === last) { order[0] = order[1]; order[1] = last; }   // ikke samme sang to ganger på rad
+  }
   if (newPos < 0) newPos = 0;
   pos = newPos;
   const t = tracks[order[pos]];
@@ -277,10 +281,17 @@ async function loadAt(newPos, autoplay) {
     await audio.play();
     status("");
   } catch (e) {
-    if (token !== loadToken) return;
-    if (e && e.name === "NotAllowedError") { status("Trykk spill for å starte"); return; }
+    if (token !== loadToken || playInterrupted(e)) return;
     fileFailed(t, e && e.name);
   }
+}
+
+/* play() som ble avbrutt (pause eller ny sang før den rakk å starte) eller nektet av telefonen, er ikke en ødelagt fil */
+function playInterrupted(e) {
+  const n = e && e.name;
+  if (n === "AbortError") return true;
+  if (n === "NotAllowedError") { log("Telefonen nektet å starte musikken (trykk spill)"); status("Trykk spill for å starte"); return true; }
+  return false;
 }
 
 function currentTrack() { return pos >= 0 && order[pos] !== undefined ? tracks[order[pos]] : null; }
@@ -309,8 +320,7 @@ function play(src) {
   if (pos < 0 || !audio.src) { loadAt(0, true); return; }
   const t = currentTrack(), token = loadToken;
   audio.play().then(() => status("")).catch((e) => {
-    if (token !== loadToken) return;
-    if (e && e.name === "NotAllowedError") { status("Trykk spill for å starte"); return; }
+    if (token !== loadToken || playInterrupted(e)) return;
     if (t) fileFailed(t, e && e.name);     // f.eks. filen kan ikke lenger leses: gå videre i stedet for å stå stille
   });
 }
@@ -459,7 +469,7 @@ if ("mediaSession" in navigator) {
   h("nexttrack", headsetNext);
   h("previoustrack", () => prev("headset"));
   h("seekto", (d) => { if (d.seekTime != null) { audio.currentTime = d.seekTime; updatePosition(); } });
-  h("seekforward", (d) => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (d.seekOffset || 10)); updatePosition(); });
+  h("seekforward", (d) => { if (!isFinite(audio.duration)) return; audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (d.seekOffset || 10)); updatePosition(); });
   h("seekbackward", (d) => { audio.currentTime = Math.max(0, audio.currentTime - (d.seekOffset || 10)); updatePosition(); });
 }
 
@@ -501,7 +511,7 @@ function scheduleAutoResume() {
     autoTimer = null;
     if (token !== loadToken || !audio.paused || !audio.getAttribute("src")) return;
     autoTimes.push(Date.now());
-    audio.play().then(() => log("Fortsatte automatisk")).catch((e) => log("Klarte ikke å fortsette automatisk (" + ((e && e.name) || "ukjent") + ")"));
+    audio.play().then(() => log("Fortsatte automatisk")).catch((e) => { if (!e || e.name !== "AbortError") log("Klarte ikke å fortsette automatisk (" + ((e && e.name) || "ukjent") + ")"); });
   }, 2000);
 }
 function renderAuto() {
@@ -619,8 +629,8 @@ if (IS_WEB && "serviceWorker" in navigator) {
   if (sw.addEventListener) {
     sw.addEventListener("controllerchange", () => {
       if (!hadController) return;
-      // Ny versjon har tatt over. Last på nytt med en gang, men aldri midt i en sang.
-      if (audio.paused && !pending) reloadForUpdate();
+      // Ny versjon har tatt over. Last på nytt med en gang bare når ingen mappe er valgt, så du ikke mister mappevalget.
+      if (!tracks.length && audio.paused && !pending) reloadForUpdate();
       else if ($("updateBox").classList.contains("hidden")) { $("updateBox").classList.remove("hidden"); log("Ny versjon er klar"); }
     });
   }

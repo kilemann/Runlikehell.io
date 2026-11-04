@@ -10,7 +10,7 @@ const { ROOT } = require('./load');
 function lastSW(file, { cacheKeys = [], hits = {}, nett } = {}) {
   const handlers = {}, lager = new Map(), log = { slettet: [], fetch: [], claimed: 0, skipWaiting: 0, unregistered: 0, navigert: [] };
   for (const k of cacheKeys) lager.set(k, new Map());
-  const cache = (name) => ({ addAll: async urls => { lager.get(name).added = urls; } });
+  const cache = (name) => ({ addAll: async reqs => { lager.get(name).added = reqs.map(r => (typeof r === 'string' ? r : r.url)); lager.get(name).modes = reqs.map(r => r.cache); } });
   const caches = {
     open: async name => { if (!lager.has(name)) lager.set(name, new Map()); return cache(name); },
     keys: async () => [...lager.keys()],
@@ -24,7 +24,7 @@ function lastSW(file, { cacheKeys = [], hits = {}, nett } = {}) {
     clients: { claim: async () => { log.claimed++; }, matchAll: async () => [{ url: 'https://x.test/', navigate: u => log.navigert.push(u) }] },
     registration: { unregister: async () => { log.unregistered++; } },
   };
-  const ctx = vm.createContext({ self, caches, URL, Promise, console, fetch: async r => { log.fetch.push(r.url); return nett ? nett(r) : { fra: 'nett' }; } });
+  const ctx = vm.createContext({ self, caches, URL, Promise, console, Request: class { constructor(url, o = {}) { this.url = url; this.cache = o.cache; } }, fetch: async r => { log.fetch.push(r.url); return nett ? nett(r) : { fra: 'nett' }; } });
   vm.runInContext(fs.readFileSync(file, 'utf8') + '\n;globalThis.__v = typeof VERSION === "undefined" ? null : VERSION; globalThis.__files = typeof FILES === "undefined" ? null : FILES; globalThis.__cache = typeof CACHE === "undefined" ? null : CACHE;', ctx, { filename: file });
   const hendelse = async (type, ev = {}) => { let p; handlers[type]({ waitUntil: x => { p = x; }, ...ev }); await p; };
   const hent = async (ev) => { let svar; let kalt = false; handlers.fetch({ ...ev, respondWith: p => { kalt = true; svar = p; } }); return kalt ? svar : undefined; };
@@ -40,6 +40,7 @@ test('App-SW: lagrer alle filer appen trenger, under navn med versjonsnummer', a
   assert.equal(sw.cacheName, 'lopespiller-' + sw.v);
   assert.deepEqual(sw.lager.get(sw.cacheName).added, sw.files);
   assert.equal(sw.log.skipWaiting, 1, 'ny versjon tar over uten å vente');
+  assert.ok(sw.lager.get(sw.cacheName).modes.every(m => m === 'reload'), 'henter ferske filer forbi nettleserbufferen');
 });
 
 test('App-SW: alle lagrede filer finnes i app-mappa', () => {
