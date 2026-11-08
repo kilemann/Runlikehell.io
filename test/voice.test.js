@@ -175,3 +175,29 @@ test('Stemmen kan slås av, valget huskes, og da utføres kommandoer med en gang
   const igjen = ny({ storage: { voice: 'false' } });
   assert.equal(igjen.env.el('voiceOn').getAttribute('aria-pressed'), 'false');
 });
+
+/* ---------- 1.9.1: stemmen skal ikke ta over mediakontrollene ---------- */
+test('Med Web Audio spilles klippet uten det ekstra lydelementet, og Resume virker etter Pause', async () => {
+  const kilder = []; let klokke;
+  class Ctx {
+    constructor() { this.state = 'running'; this.destination = {}; }
+    resume() { return Promise.resolve(); }
+    decodeAudioData() { return Promise.resolve({ dur: 1 }); }
+    createBufferSource() { const s = { connect() {}, stop() {}, start: () => { kilder.push(s); klokke(() => s.onended && s.onended(), 500); } }; return s; }
+  }
+  const handlers = {};
+  const ms = { metadata: null, playbackState: 'none', setActionHandler: (a, f) => { handlers[a] = f; }, setPositionState() {} };
+  const l = load({ storage: { shuffle: 'false' }, navigator: { onLine: true, mediaSession: ms },
+    extra: { AudioContext: Ctx, atob, MediaMetadata: class {} } });
+  klokke = l.env.sandbox.setTimeout;
+  pickFolder(l.env, SANGER);
+  let voiceBrukt = 0; l.env.el('voiceAudio').play = () => { voiceBrukt++; return Promise.resolve(); };
+  l.env.document.dispatch('click'); await run(l.env);          // første trykk gjør klippene klare
+  l.env.el('play').click(); await run(l.env);
+  handlers.pause(); await run(l.env, 700);
+  handlers.play(); await run(l.env, 700);
+  assert.equal(kilder.length, 2, 'Pause og Resume sagt via Web Audio');
+  assert.equal(voiceBrukt, 0, 'lydelementet røres ikke');
+  assert.equal(l.audio.paused, false, 'musikken fortsatte');
+  assert.ok(l.api.logg.some(e => e.msg === 'Headset: spill-kommando mottatt'));
+});

@@ -1,7 +1,7 @@
 # Runlikehell.io
 Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, bruker ingen datatrafikk.
 
-**Versjon:** 1.9.0 · Side: https://kilemann.github.io/Runlikehell.io/
+**Versjon:** 1.9.1 · Side: https://kilemann.github.io/Runlikehell.io/
 
 ## Oppbygging
 - `index.html` – forside med installasjonsinstruksjoner (nedlasting som fil er alternativ)
@@ -9,6 +9,7 @@ Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres
 - `app/index.html` – selve spilleren. Lastes ned som `Lommespiller.html` og virker som enkeltfil, eller brukes som installerbar app (PWA) med `sw.js` og `manifest.webmanifest`
 
 ## Versjoner
+- **1.9.1** – Retter at «Resume» fra headsettet ikke gjorde noe etter at stemmen hadde sagt «Pause»: stemmeklippet var et eget lydelement som tok over Android-kontrollene. Klippene spilles nå via Web Audio, som ikke berører mediakontrollene. Loggen viser «Headset: spill-kommando mottatt» når Resume når appen.
 - **1.9.0** – Stemmen virket bare første gang: loggen viste «synthesis-failed» hver gang telefonens talesyntese ble brukt med låst skjerm. Nå er «Pause», «Resume», «Next» og «Play» ferdige lydklipp (kvinnestemme) innebygd i appen, spilt som vanlig lyd, uten nett. Valg av stemme er fjernet. Automatisk fortsett starter etter 1,5 s, prøver opptil 3 ganger per stopp, og avbrytes av ny sang. Loggen rommer 300 linjer, og et stopp fra Android logger skjermstatus og posisjon i sangen.
 - **1.8.0** – Navn, versjon og info-knapp (i) øverst til venstre, med bruksanvisning og versjonsliste.
 - **1.7.2** – Feilrettinger etter kodegjennomgang: pause rett etter «neste» eller «spill» ble tolket som ødelagt fil, så sangen ble hoppet over og musikken startet igjen. En oppdatering kunne laste appen på nytt mens du hadde pause og fjerne mappevalget; nå vises «Oppdater nå» i stedet når en mappe er valgt. Ny versjon henter ferske filer forbi nettleserbufferen, så den ikke kan lagre forrige versjons filer. Shuffle spiller ikke samme sang to ganger på rad ved ny runde. Telefon som nekter å starte musikken logges. Spoling framover før sangens lengde er kjent gjør ingenting.

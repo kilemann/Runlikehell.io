@@ -195,6 +195,7 @@
     <p>Stopper musikken av seg selv? Slå av batterioptimalisering for Chrome i Android-innstillingene.</p>
     <h3>Versjoner</h3>
     <div class="ai-vlog">
+        <b>v1.9.1</b><span>Retter at «Resume» fra headsettet ikke nådde appen etter at stemmen hadde snakket.</span>
         <b>v1.9.0</b><span>Stemmen er nå ferdige lydklipp og virker hver gang. Automatisk fortsett prøver på nytt, og loggen viser mer og rommer 300 linjer.</span>
         <b>v1.8.0</b><span>Navn, versjon og info-knapp øverst til venstre, som i de andre appene.</span>
         <b>v1.7.2</b><span>Feilrettinger: pause rett etter «neste» ble tolket som ødelagt fil, og en oppdatering kunne laste appen på nytt under pause.</span>
@@ -219,7 +220,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.9.0";
+const VERSION = "1.9.1";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -434,26 +435,66 @@ let pending = null;          // kommando som venter på at stemmen blir ferdig: 
 function flushPending() { const p = pending; pending = null; if (p) p.run(); }
 function dropPending() { const p = pending; pending = null; if (p) p.drop(); }
 
+/* Klippene spilles via Web Audio, ikke et eget lydelement: et ekstra lydelement tok over Android-kontrollene
+   (låseskjerm/headset), så «Resume» ikke nådde appen etter at stemmen hadde snakket (1.9.1). Uten Web Audio brukes lydelementet. */
+let actx = null;
+const clipBuf = {};
+function audioCtx() {
+  if (actx) return actx;
+  try { if (typeof AudioContext !== "undefined") actx = new AudioContext(); } catch (e) { actx = null; }
+  return actx;
+}
+function prepareClips() {          // etter første trykk i appen (Chrome krever det), slik at klippene er klare med låst skjerm
+  const c = audioCtx();
+  if (!c) return;
+  try { if (c.state === "suspended") c.resume().catch(() => {}); } catch (e) {}
+  Object.keys(CLIPS).forEach((k) => {
+    if (clipBuf[k]) return;
+    try {
+      const bin = atob(CLIPS[k].split(",")[1]), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      c.decodeAudioData(bytes.buffer).then((buf) => { clipBuf[k] = buf; }).catch(() => {});
+    } catch (e) {}
+  });
+}
+document.addEventListener("click", prepareClips);
+document.addEventListener("touchend", prepareClips);
+
 /* Si et ord, og kjør `then` når klippet er ferdig, feiler, eller senest etter 2 s. Kommandoen utføres alltid. */
 function say(word, then, force) {
   flushPending();
-  const clip = CLIPS[String(word).toLowerCase()];
+  const key = String(word).toLowerCase(), clip = CLIPS[key];
   if (!HAS_VOICE || !clip || !(voiceOn || force)) { if (then) then(); return; }
-  let done = false, timer = null;
+  let done = false, timer = null, src = null;
   const end = (runThen) => {
     if (done) return;
     done = true;
     if (timer) clearTimeout(timer);
     voiceEl.onended = null; voiceEl.onerror = null;
+    if (src) { src.onended = null; try { src.stop(); } catch (e) {} }
     if (pending === p) pending = null;
     if (runThen && then) then();
   };
   const p = { run: () => end(true), drop: () => end(false) };
   pending = p;
   try {
+    timer = setTimeout(() => end(true), 2000);
+    const c = audioCtx();
+    if (c && clipBuf[key]) {
+      const go = () => {
+        if (done) return;
+        src = c.createBufferSource();
+        src.buffer = clipBuf[key];
+        src.connect(c.destination);
+        src.onended = () => end(true);
+        src.start(0);
+      };
+      if (c.state === "suspended") c.resume().then(go).catch((e) => { log("Stemme feilet (" + ((e && e.name) || "ukjent") + ")"); end(true); });
+      else go();
+      return;
+    }
     voiceEl.onended = () => end(true);
     voiceEl.onerror = () => { log("Stemme feilet (lydklipp)"); end(true); };
-    timer = setTimeout(() => end(true), 2000);
     voiceEl.src = clip;
     voiceEl.volume = 1;
     const r = voiceEl.play();
@@ -470,6 +511,7 @@ function headsetPause() {
 }
 function headsetPlay() {
   flushPending();
+  if (audio.paused) log("Headset: spill-kommando mottatt");
   if (!audio.paused || !tracks.length) { play("headset"); return; }
   const first = pos < 0 || !audio.getAttribute("src");
   say(first ? "Play" : "Resume", () => play("headset"));
