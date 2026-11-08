@@ -8,7 +8,7 @@ const NAMES = [
   'VERSION', 'IS_WEB', 'AUDIO_EXT', 'audioFiles', 'folderOf', 'rootName', 'niceName', 'fmt', 'store', 'recall', 'status',
   'tracks', 'order', 'pos', 'shuffleOn', 'errorsInRow', 'curUrl', 'folderName',
   'buildOrder', 'loadAt', 'skipAfterError', 'play', 'pause', 'toggle', 'next', 'prev', 'stop', 'showInstall',
-  'logg',
+  'logg', 'CLIPS',
 ];
 
 /* Simulert lydelement. `fail(filnavn)` kan returnere et feilnavn som play() avviser med. */
@@ -44,6 +44,7 @@ function load(opts = {}) {
     ...opts,
     prepare: env => {
       audio = env.setEl('audio', new FakeAudio()); audio.env = env;
+      env.setEl('voiceAudio', new FakeAudio());
       env.setEl('dir', new FakeElement('dir')).webkitdirectory = true;
       // nye <input>-elementer støtter mappevalg, som i Chrome (slås av med mappevalg: false)
       const lag = env.document.createElement;

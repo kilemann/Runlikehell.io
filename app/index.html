@@ -156,9 +156,8 @@
   <details class="card" id="voiceBox">
     <summary>Stemme</summary>
     <div class="stack">
-      <p class="note" style="margin:0">Sier «Pause», «Resume» og «Next» når du trykker på headsettet. Bruker telefonens egen talestemme, uten nett.</p>
+      <p class="note" style="margin:0">Sier «Pause», «Resume» og «Next» når du trykker på headsettet. Stemmen ligger i appen og virker uten nett.</p>
       <button class="btn full toggle" id="voiceOn" aria-pressed="true">🗣 Stemme: på</button>
-      <select class="sel" id="voiceSel" aria-label="Velg stemme"></select>
       <button class="btn full" id="voiceTest">▶ Test stemme</button>
     </div>
   </details>
@@ -188,14 +187,15 @@
     </ul>
     <h3>Headset og låseskjerm</h3>
     <p>Pause, neste og forrige styres fra headsettet, låseskjermen og varslingsfeltet. Hvilket tapp som gjør hva, bestemmes av headsettet.</p>
-    <p>Under <b>Stemme</b> kan du slå på en talestemme som sier «Pause», «Resume» og «Next» når du trykker på headsettet. Den bruker telefonens egen talesyntese, uten nett.</p>
+    <p>Under <b>Stemme</b> kan du slå på en talestemme som sier «Pause», «Resume» og «Next» når du trykker på headsettet. Stemmen ligger ferdig innebygd i appen, så den virker hver gang og uten nett.</p>
     <h3>Fortsett automatisk</h3>
-    <p>Stopper Android musikken (Bluetooth-brudd, annen app eller varsel), fortsetter den av seg selv etter 2 sekunder, maks 3 ganger på 5 minutter. Kan slås av. <b>Hendelseslogg</b> viser hva som stoppet eller byttet musikken.</p>
+    <p>Stopper Android musikken (Bluetooth-brudd, annen app eller varsel), fortsetter den av seg selv etter 1,5 sekunder (prøver opptil 3 ganger hvis det ikke går), maks 3 stopp på 5 minutter. Kan slås av. <b>Hendelseslogg</b> viser hva som stoppet eller byttet musikken.</p>
     <h3>Personvern og nett</h3>
     <p>Sangene spilles rett fra telefonen. Ingenting kopieres eller lastes opp, og appen bruker ingen datatrafikk etter at den er installert. Mappa må velges på nytt hver gang appen åpnes.</p>
     <p>Stopper musikken av seg selv? Slå av batterioptimalisering for Chrome i Android-innstillingene.</p>
     <h3>Versjoner</h3>
     <div class="ai-vlog">
+        <b>v1.9.0</b><span>Stemmen er nå ferdige lydklipp og virker hver gang. Automatisk fortsett prøver på nytt, og loggen viser mer og rommer 300 linjer.</span>
         <b>v1.8.0</b><span>Navn, versjon og info-knapp øverst til venstre, som i de andre appene.</span>
         <b>v1.7.2</b><span>Feilrettinger: pause rett etter «neste» ble tolket som ødelagt fil, og en oppdatering kunne laste appen på nytt under pause.</span>
         <b>v1.7.1</b><span>Ny versjon vises med en gang etter oppdatering.</span>
@@ -215,10 +215,11 @@
 
   <input type="file" id="dir" webkitdirectory multiple class="hidden">
   <audio id="audio" preload="auto"></audio>
+  <audio id="voiceAudio" preload="auto"></audio>
 
 <script>
 "use strict";
-const VERSION = "1.8.0";
+const VERSION = "1.9.0";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -253,7 +254,7 @@ const escHtml = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<":
 const pad2 = (n) => String(n).padStart(2, "0");
 
 /* ---------- Hendelseslogg: hva stoppet eller byttet musikken ---------- */
-const LOG_MAX = 100;
+const LOG_MAX = 300;
 let logg = (() => { const v = recall("logg", []); return Array.isArray(v) ? v.filter((e) => e && typeof e.msg === "string") : []; })();
 function log(msg) {
   const d = new Date();
@@ -326,6 +327,7 @@ async function loadAt(newPos, autoplay) {
   }
   if (newPos < 0) newPos = 0;
   pos = newPos;
+  cancelAutoResume();                      // ny sang overstyrer ventende automatisk fortsett
   const t = tracks[order[pos]];
   const token = ++loadToken;
   renderNow(t);
@@ -415,51 +417,47 @@ function stop() {
   setPlayIcon(false);
 }
 
-/* ---------- Talestemme: «Pause», «Resume», «Next» ved trykk på headsettet ---------- */
-const synth = window.speechSynthesis;
-const HAS_VOICE = !!synth && typeof SpeechSynthesisUtterance !== "undefined";
-const FEMALE = /female|kvinne|samantha|zira|jenny|aria|libby|sonia|susan|karen|moira|tessa|serena|fiona|victoria|hazel|emma|amy/i;
+/* ---------- Talestemme: «Pause», «Resume», «Next» ved trykk på headsettet ----------
+   Fra 1.9.0 ferdige lydklipp i appen (kvinnestemme) i stedet for telefonens talesyntese, som feilet
+   (synthesis-failed) med låst skjerm. Klippene spilles som vanlig lyd, så de virker hver gang og uten nett. */
+const CLIPS = {
+  pause: "data:audio/mpeg;base64,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",
+  resume: "data:audio/mpeg;base64,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",
+  next: "data:audio/mpeg;base64,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",
+  play: "data:audio/mpeg;base64,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"
+};
+const voiceEl = $("voiceAudio");
+const HAS_VOICE = !!voiceEl && typeof voiceEl.play === "function";
 let voiceOn = recall("voice", true);
-let voiceName = recall("voiceName", "");
 let pending = null;          // kommando som venter på at stemmen blir ferdig: { run, drop }
 
-function englishVoices() {
-  if (!HAS_VOICE) return [];
-  try { return Array.from(synth.getVoices() || []).filter((v) => /^en/i.test(v.lang || "")); } catch (e) { return []; }
-}
-function autoVoice() { const en = englishVoices(); return en.find((v) => FEMALE.test(v.name)) || en[0] || null; }
-function pickVoice() { return (voiceName && englishVoices().find((v) => v.name === voiceName)) || autoVoice(); }
 function flushPending() { const p = pending; pending = null; if (p) p.run(); }
 function dropPending() { const p = pending; pending = null; if (p) p.drop(); }
 
-/* Si et ord, og kjør `then` når stemmen er ferdig, feiler, eller senest etter 1,5 s. Kommandoen utføres alltid. */
+/* Si et ord, og kjør `then` når klippet er ferdig, feiler, eller senest etter 2 s. Kommandoen utføres alltid. */
 function say(word, then, force) {
   flushPending();
-  if (!HAS_VOICE || !(voiceOn || force)) { if (then) then(); return; }
+  const clip = CLIPS[String(word).toLowerCase()];
+  if (!HAS_VOICE || !clip || !(voiceOn || force)) { if (then) then(); return; }
   let done = false, timer = null;
   const end = (runThen) => {
     if (done) return;
     done = true;
     if (timer) clearTimeout(timer);
+    voiceEl.onended = null; voiceEl.onerror = null;
     if (pending === p) pending = null;
     if (runThen && then) then();
   };
   const p = { run: () => end(true), drop: () => end(false) };
   pending = p;
   try {
-    synth.cancel();
-    const u = new SpeechSynthesisUtterance(word);
-    const v = pickVoice();
-    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = "en-US";
-    u.rate = 0.9; u.pitch = 1; u.volume = 1;
-    u.onend = () => end(true);
-    u.onerror = (e) => {
-      const why = (e && e.error) || "ukjent";
-      if (why !== "interrupted" && why !== "canceled") log("Stemme feilet (" + why + ")");
-      end(true);
-    };
-    timer = setTimeout(() => end(true), 1500);
-    synth.speak(u);
+    voiceEl.onended = () => end(true);
+    voiceEl.onerror = () => { log("Stemme feilet (lydklipp)"); end(true); };
+    timer = setTimeout(() => end(true), 2000);
+    voiceEl.src = clip;
+    voiceEl.volume = 1;
+    const r = voiceEl.play();
+    if (r && r.catch) r.catch((e) => { log("Stemme feilet (" + ((e && e.name) || "ukjent") + ")"); end(true); });
   } catch (e) { end(true); }
 }
 
@@ -488,15 +486,9 @@ function renderVoice() {
   if (!HAS_VOICE) return;
   $("voiceOn").setAttribute("aria-pressed", String(voiceOn));
   $("voiceOn").textContent = "🗣 Stemme: " + (voiceOn ? "på" : "av");
-  const auto = autoVoice();
-  $("voiceSel").innerHTML = '<option value="">Automatisk' + (auto ? " (" + escHtml(auto.name) + ")" : "") + "</option>" +
-    englishVoices().map((v) => '<option value="' + escHtml(v.name) + '"' + (v.name === voiceName ? " selected" : "") + ">" +
-      escHtml(v.name) + " · " + escHtml(v.lang) + "</option>").join("");
 }
 $("voiceOn").addEventListener("click", () => { voiceOn = !voiceOn; store("voice", voiceOn); renderVoice(); });
-$("voiceSel").addEventListener("change", () => { voiceName = $("voiceSel").value || ""; store("voiceName", voiceName); });
 $("voiceTest").addEventListener("click", () => say("Resume", null, true));
-if (HAS_VOICE) { try { synth.addEventListener("voiceschanged", renderVoice); } catch (e) {} }
 
 /* ---------- Media Session: låseskjerm + headset ---------- */
 function updateMetadata(t) {
@@ -540,10 +532,12 @@ audio.addEventListener("pause", () => {
   const reason = pauseReason; pauseReason = null;
   if (reason || audio.ended || !audio.getAttribute("src")) return;
   // Verken appen eller headsettet ba om pause: Android stoppet lyden (Bluetooth-brudd, annen app, varsel)
-  log("Stoppet av Android (Bluetooth-brudd eller annen lyd)");
+  log("Stoppet av Android (Bluetooth-brudd eller annen lyd) · skjerm " + (document.visibilityState === "visible" ? "på" : "av/låst") + ", etter " + Math.round(audio.currentTime) + " s i sangen");
   scheduleAutoResume();
 });
 audio.addEventListener("ended", () => next());
+let lastWait = 0;
+audio.addEventListener("waiting", () => { const n = Date.now(); if (!audio.paused && n - lastWait > 10000) { lastWait = n; log("Lyden venter på data (buffer tom)"); } });
 audio.addEventListener("error", () => {
   if (!audio.getAttribute("src")) return;
   const t = currentTrack();
@@ -554,6 +548,7 @@ audio.addEventListener("error", () => {
 
 /* ---------- Fortsett automatisk når Android stopper musikken ---------- */
 function cancelAutoResume() { if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; } }
+const RESUME_WAIT = [1500, 2500, 4000];   // ventetid før hvert forsøk, hvis lyden fortsatt står stille
 function scheduleAutoResume() {
   cancelAutoResume();
   if (!autoResumeOn) return;
@@ -565,13 +560,23 @@ function scheduleAutoResume() {
     status("Android stoppet musikken flere ganger. Trykk spill for å fortsette.", true);
     return;
   }
-  const token = loadToken;
-  autoTimer = setTimeout(() => {
-    autoTimer = null;
-    if (token !== loadToken || !audio.paused || !audio.getAttribute("src")) return;
-    autoTimes.push(Date.now());
-    audio.play().then(() => log("Fortsatte automatisk")).catch((e) => { if (!e || e.name !== "AbortError") log("Klarte ikke å fortsette automatisk (" + ((e && e.name) || "ukjent") + ")"); });
-  }, 2000);
+  autoTimes.push(now);                      // teller som én stopp, uansett hvor mange forsøk som trengs
+  const token = loadToken, t0 = now;
+  const attempt = (n) => {
+    autoTimer = setTimeout(() => {
+      autoTimer = null;
+      if (token !== loadToken || !audio.paused || !audio.getAttribute("src")) return;
+      const late = Math.round((Date.now() - t0) / 1000);
+      audio.play().then(() => log("Fortsatte automatisk" + (late >= 5 ? " (etter " + late + " s)" : "")))
+        .catch((e) => {
+          const why = (e && e.name) || "ukjent";
+          if (why === "AbortError") return;
+          if (n + 1 < RESUME_WAIT.length && why !== "NotAllowedError") { log("Forsøk " + (n + 1) + " å fortsette feilet (" + why + "), prøver igjen"); attempt(n + 1); }
+          else log("Klarte ikke å fortsette automatisk (" + why + ")");
+        });
+    }, RESUME_WAIT[n]);
+  };
+  attempt(0);
 }
 function renderAuto() {
   $("autoResume").setAttribute("aria-pressed", String(autoResumeOn));

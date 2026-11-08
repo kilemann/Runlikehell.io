@@ -57,12 +57,12 @@ test('Spill og neste fra headset logges med kilde', async () => {
   assert.equal(sisteLogg(l), 'Ny sang: b');
 });
 
-test('Pause fra Android (ikke appen eller headsettet) logges og fortsetter automatisk etter 2 s', async () => {
+test('Pause fra Android (ikke appen eller headsettet) logges og fortsetter automatisk etter 1,5 s', async () => {
   const l = ny();
   l.env.el('play').click(); await run(l.env);
   androidPause(l);
   assert.match(sisteLogg(l), /^Stoppet av Android/);
-  await run(l.env, 1900);
+  await run(l.env, 1400);
   assert.equal(l.audio.paused, true, 'venter litt først');
   await run(l.env, 200);
   assert.equal(l.audio.paused, false);
@@ -186,15 +186,15 @@ test('Loggen har klokkeslett, nyeste nederst, og vises i appen', async () => {
   assert.ok(l.env.el('log').innerHTML.includes('Ny sang: a'));
 });
 
-test('Loggen lagres og overlever omstart, maks 100 linjer', async () => {
+test('Loggen lagres og overlever omstart, maks 300 linjer', async () => {
   const l = ny();
-  for (let i = 0; i < 60; i++) { l.env.el('next').click(); await run(l.env); }
-  assert.equal(l.api.logg.length, 100);
+  for (let i = 0; i < 160; i++) { l.env.el('next').click(); await run(l.env); }
+  assert.equal(l.api.logg.length, 300);
   const lagret = l.env.storage.get('logg');
   const igjen = ny({ storage: { logg: lagret } });   // ny() velger mappe, som gir én ny linje
-  assert.equal(igjen.api.logg.length, 100);
-  assert.equal(igjen.api.logg[98].msg, l.api.logg[99].msg, 'gammel logg er med');
-  assert.match(igjen.api.logg[99].msg, /^Mappe valgt: Musikk/);
+  assert.equal(igjen.api.logg.length, 300);
+  assert.equal(igjen.api.logg[298].msg, l.api.logg[299].msg, 'gammel logg er med');
+  assert.match(igjen.api.logg[299].msg, /^Mappe valgt: Musikk/);
 });
 
 test('Loggen escaper filnavn (ingen HTML fra filnavn)', async () => {
@@ -243,4 +243,38 @@ test('Shuffle: ny runde starter ikke med samme sang som forrige runde sluttet me
     l.env.el('next').click(); await run(l.env);
     assert.notEqual(spilt(l), sist);
   }
+});
+
+/* ---------- 1.9.0: mer robust automatisk fortsett ---------- */
+test('Mislykket forsøk på å fortsette prøves på nytt, og teller som én stopp', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env);
+  androidPause(l);
+  l.audio.fail = () => 'NotSupportedError';
+  await run(l.env, 1600);
+  assert.equal(l.audio.paused, true);
+  l.audio.fail = () => null;
+  await run(l.env, 3000);
+  assert.equal(l.audio.paused, false, 'andre forsøk lykkes');
+  assert.ok(logg(l).some(m => m.startsWith('Forsøk 1 å fortsette feilet')));
+  androidPause(l); await run(l.env, 2000);
+  androidPause(l); await run(l.env, 2000);
+  assert.equal(l.audio.paused, false, 'tre stopp er fortsatt innenfor kvoten');
+});
+
+test('Neste sang mens automatisk fortsett venter: ventende forsøk avbrytes', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env);
+  androidPause(l);
+  l.env.el('next').click(); await run(l.env);
+  const antall = l.audio.playLog.length;
+  await run(l.env, 6000);
+  assert.equal(l.audio.playLog.length, antall);
+});
+
+test('Stopp av Android logger skjermstatus og posisjon', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env);
+  androidPause(l);
+  assert.match(sisteLogg(l), /skjerm (på|av\/låst).*s i sangen/);
 });

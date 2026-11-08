@@ -1,7 +1,7 @@
 # Runlikehell.io
 Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, bruker ingen datatrafikk.
 
-**Versjon:** 1.8.0 · Side: https://kilemann.github.io/Runlikehell.io/
+**Versjon:** 1.9.0 · Side: https://kilemann.github.io/Runlikehell.io/
 
 ## Oppbygging
 - `index.html` – forside med installasjonsinstruksjoner (nedlasting som fil er alternativ)
@@ -9,6 +9,7 @@ Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres
 - `app/index.html` – selve spilleren. Lastes ned som `Lommespiller.html` og virker som enkeltfil, eller brukes som installerbar app (PWA) med `sw.js` og `manifest.webmanifest`
 
 ## Versjoner
+- **1.9.0** – Stemmen virket bare første gang: loggen viste «synthesis-failed» hver gang telefonens talesyntese ble brukt med låst skjerm. Nå er «Pause», «Resume», «Next» og «Play» ferdige lydklipp (kvinnestemme) innebygd i appen, spilt som vanlig lyd, uten nett. Valg av stemme er fjernet. Automatisk fortsett starter etter 1,5 s, prøver opptil 3 ganger per stopp, og avbrytes av ny sang. Loggen rommer 300 linjer, og et stopp fra Android logger skjermstatus og posisjon i sangen.
 - **1.8.0** – Navn, versjon og info-knapp (i) øverst til venstre, med bruksanvisning og versjonsliste.
 - **1.7.2** – Feilrettinger etter kodegjennomgang: pause rett etter «neste» eller «spill» ble tolket som ødelagt fil, så sangen ble hoppet over og musikken startet igjen. En oppdatering kunne laste appen på nytt mens du hadde pause og fjerne mappevalget; nå vises «Oppdater nå» i stedet når en mappe er valgt. Ny versjon henter ferske filer forbi nettleserbufferen, så den ikke kan lagre forrige versjons filer. Shuffle spiller ikke samme sang to ganger på rad ved ny runde. Telefon som nekter å starte musikken logges. Spoling framover før sangens lengde er kjent gjør ingenting.
 - **1.7.1** – Retter at appen viste forrige versjon første gang etter en oppdatering. Når ny versjon er lastet ned, lastes siden på nytt med en gang hvis musikken ikke spiller; spiller den, vises «Oppdater nå» i stedet, så sangen ikke avbrytes. Installert app ser etter ny versjon når den hentes fram, maks én gang i timen.
@@ -36,7 +37,7 @@ Krever Node 22 eller nyere. Ingen avhengigheter.
 |---|---|
 | `test/helpers.test.js` | Filfiltrering, navn, tidsformat, lagring, status |
 | `test/pause.test.js` | Pausekilde, automatisk fortsett, heng, fortsett på ulesbar fil, hendelseslogg |
-| `test/voice.test.js` | Talestemme: hvilke kommandoer som får stemme, rekkefølge musikk/stemme, reserveløsning, stemmevalg |
+| `test/voice.test.js` | Stemmeklipp: hvilke kommandoer som får stemme, rekkefølge musikk/stemme, reserveløsning, virker hver gang |
 | `test/update.test.js` | Ny versjon tar over: ny innlasting, «Oppdater nå» under avspilling, sjekk når appen hentes fram |
 | `test/player.test.js` | Mappevalg, shuffle, spill/pause/neste/forrige, spoling, feil og hopp over, Media Session |
 | `test/install.test.js` | Installer-knapp, service worker-registrering, oppstart |

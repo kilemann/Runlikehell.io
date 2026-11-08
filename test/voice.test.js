@@ -1,54 +1,37 @@
 'use strict';
 /* Talestemme (1.7.0): myk damestemme sier «Pause», «Resume» og «Next» når du trykker på headsettet.
-   Bruker telefonens egen talesyntese (speechSynthesis). Regler:
+   Fra 1.9.0 ferdige lydklipp i appen (telefonens talesyntese feilet med låst skjerm). Regler:
    - Bare kommandoer fra headset/låseskjerm får stemme, ikke knappene i appen
    - Musikk og stemme overlapper aldri: Pause pauser først og snakker så; Resume og Next snakker først
-   - Kommandoen utføres alltid: når stemmen er ferdig, ved feil, eller etter maks 1,5 s
-   - Engelsk damestemme velges automatisk, men kan velges selv, og stemmen kan slås av */
+   - Kommandoen utføres alltid: når klippet er ferdig, ved feil, eller etter maks 2 s
+   - Stemmen kan slås av, og virker hver gang, ikke bare første gang */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { load, run, pickFolder } = require('./load');
 
 const SANGER = ['Musikk/a.mp3', 'Musikk/b.mp3', 'Musikk/c.mp3'];
-const STEMMER = [
-  { name: 'Deutsch', lang: 'de-DE', default: true },
-  { name: 'English United States', lang: 'en-US' },
-  { name: 'Google UK English Female', lang: 'en-GB' },
-  { name: 'Google UK English Male', lang: 'en-GB' },
-  { name: 'Norsk', lang: 'nb-NO' },
-];
-
-function fakeSynth(stemmer = STEMMER) {
-  const s = { said: [], cancelled: 0, voices: stemmer, auto: 'end', _ls: {} };
-  s.getVoices = () => s.voices;
-  s.cancel = () => { s.cancelled++; const u = s.current; s.current = null; if (u && u.onerror) u.onerror({ error: 'interrupted' }); };
-  s.speak = u => {
-    s.said.push(u); s.current = u;
-    // 'end': ferdig etter 0,6 s, 'error': feiler med en gang, 'stille': svarer aldri
-    if (s.auto === 'error' && u.onerror) s.setTimeout(() => u.onerror({ error: 'not-allowed' }), 0);
-    if (s.auto === 'end') s.setTimeout(() => { if (s.current === u) { s.current = null; u.onend && u.onend({}); } }, 600);
-  };
-  s.addEventListener = (t, f) => { s._ls[t] = f; };
-  return s;
-}
-
+/* Simulert stemmeklipp. modus: 'end' = ferdig etter 0,6 s, 'error' = nektes av telefonen, 'stille' = svarer aldri */
 function ny(opts = {}) {
   const handlers = {};
   const ms = { metadata: null, playbackState: 'none', setActionHandler: (a, f) => { handlers[a] = f; }, setPositionState() {} };
-  const synth = opts.synth === null ? undefined : (opts.synth || fakeSynth());
   const l = load({
     storage: { shuffle: 'false', ...(opts.storage || {}) },
     navigator: { onLine: true, mediaSession: ms },
-    extra: {
-      MediaMetadata: class { constructor(o) { Object.assign(this, o); } },
-      ...(synth ? { speechSynthesis: synth, SpeechSynthesisUtterance: class { constructor(t) { this.text = t; } } } : {}),
-    },
+    extra: { MediaMetadata: class { constructor(o) { Object.assign(this, o); } } },
   });
-  if (synth) synth.setTimeout = l.env.sandbox.setTimeout;   // stemmen følger testklokka
+  const v = l.env.el('voiceAudio');
+  const stemme = { said: [], modus: opts.modus || 'end' };
+  v.play = function () {
+    const ord = Object.keys(l.api.CLIPS).find(k => l.api.CLIPS[k] === this.src);
+    stemme.said.push(ord);
+    if (stemme.modus === 'error') return Promise.reject(Object.assign(new Error('nektet'), { name: 'NotAllowedError' }));
+    if (stemme.modus === 'end') l.env.sandbox.setTimeout(() => { this.onended && this.onended(); }, 600);
+    return Promise.resolve();
+  };
   pickFolder(l.env, SANGER);
-  return { ...l, handlers, synth };
+  return { ...l, handlers, stemme };
 }
-const sagt = l => l.synth.said.map(u => u.text);
+const sagt = l => l.stemme.said;
 const spilt = l => l.audio.fileName;
 
 /* ---------- kommandoer fra headsettet ---------- */
@@ -57,7 +40,7 @@ test('Pause fra headset: musikken stopper med en gang, så sier stemmen «Pause�
   l.env.el('play').click(); await run(l.env);
   l.handlers.pause();
   assert.equal(l.audio.paused, true, 'pauser før stemmen snakker');
-  assert.deepEqual(sagt(l), ['Pause']);
+  assert.deepEqual(sagt(l), ['pause']);
 });
 
 test('Resume fra headset: stemmen sier «Resume» først, musikken starter når den er ferdig', async () => {
@@ -65,7 +48,7 @@ test('Resume fra headset: stemmen sier «Resume» først, musikken starter når 
   l.env.el('play').click(); await run(l.env);
   l.handlers.pause(); await run(l.env, 1000);
   l.handlers.play(); await run(l.env);
-  assert.deepEqual(sagt(l), ['Pause', 'Resume']);
+  assert.deepEqual(sagt(l), ['pause', 'resume']);
   assert.equal(l.audio.paused, true, 'ingen musikk mens stemmen snakker');
   await run(l.env, 700);
   assert.equal(l.audio.paused, false);
@@ -75,7 +58,7 @@ test('Resume fra headset: stemmen sier «Resume» først, musikken starter når 
 test('Første start fra headset sier «Play»', async () => {
   const l = ny();
   l.handlers.play(); await run(l.env, 700);
-  assert.deepEqual(sagt(l), ['Play']);
+  assert.deepEqual(sagt(l), ['play']);
   assert.equal(l.audio.paused, false);
 });
 
@@ -84,7 +67,7 @@ test('Next fra headset: musikken stopper, stemmen sier «Next», så starter nes
   l.env.el('play').click(); await run(l.env);
   l.handlers.nexttrack(); await run(l.env);
   assert.equal(l.audio.paused, true, 'ingen musikk mens stemmen snakker');
-  assert.deepEqual(sagt(l), ['Next']);
+  assert.deepEqual(sagt(l), ['next']);
   await run(l.env, 700);
   assert.equal(spilt(l), 'b.mp3');
   assert.equal(l.audio.paused, false);
@@ -120,11 +103,10 @@ test('Knappene i appen gir ingen stemme', async () => {
 });
 
 /* ---------- kommandoen utføres alltid ---------- */
-test('Svarer ikke stemmen, utføres kommandoen likevel etter 1,5 s', async () => {
-  const synth = fakeSynth(); synth.auto = 'stille';
-  const l = ny({ synth });
+test('Svarer ikke stemmen, utføres kommandoen likevel etter 2 s', async () => {
+  const l = ny({ modus: 'stille' });
   l.env.el('play').click(); await run(l.env);
-  l.handlers.nexttrack(); await run(l.env, 1400);
+  l.handlers.nexttrack(); await run(l.env, 1900);
   assert.equal(spilt(l), 'a.mp3');
   await run(l.env, 200);
   assert.equal(spilt(l), 'b.mp3');
@@ -132,12 +114,11 @@ test('Svarer ikke stemmen, utføres kommandoen likevel etter 1,5 s', async () =>
 });
 
 test('Feiler stemmen, utføres kommandoen med en gang og feilen logges', async () => {
-  const synth = fakeSynth(); synth.auto = 'error';
-  const l = ny({ synth });
+  const l = ny({ modus: 'error' });
   l.env.el('play').click(); await run(l.env);
   l.handlers.nexttrack(); await run(l.env, 10);
   assert.equal(spilt(l), 'b.mp3');
-  assert.ok(l.api.logg.some(e => e.msg === 'Stemme feilet (not-allowed)'));
+  assert.ok(l.api.logg.some(e => e.msg === 'Stemme feilet (NotAllowedError)'));
 });
 
 test('To raske Next etter hverandre hopper to sanger, i riktig rekkefølge', async () => {
@@ -157,67 +138,28 @@ test('Pause rett etter Resume: musikken ender på pause', async () => {
   l.handlers.play(); await run(l.env, 100);
   l.handlers.pause(); await run(l.env, 2000);
   assert.equal(l.audio.paused, true);
-  assert.equal(sagt(l)[sagt(l).length - 1], 'Pause');
+  assert.equal(sagt(l)[sagt(l).length - 1], 'pause');
 });
 
-test('Uten talesyntese i nettleseren virker headsettet som før, uten forsinkelse', async () => {
-  const l = ny({ synth: null });
-  l.env.el('play').click(); await run(l.env);
-  l.handlers.nexttrack(); await run(l.env);
-  assert.equal(spilt(l), 'b.mp3');
-  assert.equal(l.env.el('voiceBox').classList.contains('hidden'), true, 'stemmeinnstillinger skjules');
-});
-
-/* ---------- valg av stemme ---------- */
-test('Engelsk damestemme velges automatisk, med rolig tempo', async () => {
+test('Stemmen virker hver gang, også etter mange kommandoer (ikke bare første gang)', async () => {
   const l = ny();
   l.env.el('play').click(); await run(l.env);
-  l.handlers.pause();
-  const u = l.synth.said[0];
-  assert.equal(u.voice.name, 'Google UK English Female');
-  assert.equal(u.lang, 'en-GB');
-  assert.ok(u.rate < 1, 'litt roligere enn normalt');
+  for (let i = 0; i < 10; i++) { l.handlers.nexttrack(); await run(l.env, 700); }
+  assert.equal(sagt(l).length, 10);
+  assert.ok(sagt(l).every(o => o === 'next'));
+  assert.ok(!l.api.logg.some(e => e.msg.startsWith('Stemme feilet')));
 });
 
-test('Uten kjent damestemme brukes første engelske stemme', async () => {
-  const l = ny({ synth: fakeSynth([{ name: 'Deutsch', lang: 'de-DE' }, { name: 'English United States', lang: 'en-US' }]) });
-  l.env.el('play').click(); await run(l.env);
-  l.handlers.pause();
-  assert.equal(l.synth.said[0].voice.name, 'English United States');
-});
-
-test('Uten engelske stemmer snakker den likevel med språk en-US', async () => {
-  const l = ny({ synth: fakeSynth([{ name: 'Norsk', lang: 'nb-NO' }]) });
-  l.env.el('play').click(); await run(l.env);
-  l.handlers.pause();
-  assert.equal(l.synth.said[0].lang, 'en-US');
-});
-
-test('Stemmelista viser engelske stemmer, og valgt stemme brukes og huskes', async () => {
+test('Hvert klipp finnes som innebygd lyd (ingen avhengighet av telefonens talesyntese)', () => {
   const l = ny();
-  const html = l.env.el('voiceSel').innerHTML;
-  assert.ok(html.includes('Google UK English Male'));
-  assert.ok(!html.includes('Deutsch'));
-  l.env.el('voiceSel').value = 'Google UK English Male';
-  l.env.el('voiceSel').dispatch('change');
-  assert.equal(l.env.storage.get('voiceName'), JSON.stringify('Google UK English Male'));
-  l.env.el('play').click(); await run(l.env);
-  l.handlers.pause();
-  assert.equal(l.synth.said[0].voice.name, 'Google UK English Male');
-});
-
-test('Stemmelista oppdateres når telefonen har lastet inn stemmene', () => {
-  const synth = fakeSynth([]);
-  const l = ny({ synth });
-  synth.voices = STEMMER;
-  synth._ls.voiceschanged();
-  assert.ok(l.env.el('voiceSel').innerHTML.includes('Google UK English Female'));
+  for (const o of ['pause', 'resume', 'next', 'play']) assert.match(l.api.CLIPS[o], /^data:audio\/mpeg;base64,.{1000,}/, o);
+  assert.equal(l.env.el('voiceBox').classList.contains('hidden'), false);
 });
 
 test('«Test stemme» sier «Resume»', () => {
   const l = ny();
   l.env.el('voiceTest').click();
-  assert.deepEqual(sagt(l), ['Resume']);
+  assert.deepEqual(sagt(l), ['resume']);
 });
 
 test('Stemmen kan slås av, valget huskes, og da utføres kommandoer med en gang', async () => {
