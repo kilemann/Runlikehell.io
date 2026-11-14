@@ -196,6 +196,7 @@
     <p>Stopper musikken av seg selv? Slå av batterioptimalisering for Chrome i Android-innstillingene.</p>
     <h3>Versjoner</h3>
     <div class="ai-vlog">
+        <b>v1.9.6</b><span>Tydeligere installasjonsråd: velg «Installer app», ikke snarvei.</span>
         <b>v1.9.5</b><span>«Kopier logg»-knapp: kopierer hele loggen med dato, eldste først, klar til å limes inn.</span>
         <b>v1.9.4</b><span>Musikken som sto stille uten melding (Neste virket, men ingenting i loggen) oppdages nå og startes på nytt.</span>
         <b>v1.9.3</b><span>Loggen viser nå når Chrome har frosset eller lukket appen (stopp uten melding fra lydelementet).</span>
@@ -225,7 +226,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.9.5";
+const VERSION = "1.9.6";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -792,7 +793,7 @@ function showInstall() {
   $("installBtn").classList.toggle("hidden", !installEvent);
   $("installHint").textContent = installEvent
     ? "Gir kassettikon på hjemskjermen. Virker uten nett."
-    : "Installer: trykk ⋮ i Chrome og velg «Installer app» eller «Legg til på startskjermen».";
+    : "Installer: trykk ⋮ i Chrome og velg «Installer app». Velg ikke «Legg til på startskjermen» hvis den gir valget «Snarvei»: det blir bare en snarvei, ikke en app.";
 }
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvent = e; showInstall(); });
 $("installBtn").addEventListener("click", async () => {
