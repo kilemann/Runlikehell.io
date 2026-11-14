@@ -201,3 +201,25 @@ test('Med Web Audio spilles klippet uten det ekstra lydelementet, og Resume virk
   assert.equal(l.audio.paused, false, 'musikken fortsatte');
   assert.ok(l.api.logg.some(e => e.msg === 'Headset: spill-kommando mottatt'));
 });
+
+/* ---------- 1.9.7: klipp som ikke er klart skal ikke bruke lydelementet ---------- */
+test('Web Audio finnes, men klippet er ikke klargjort: stemmen droppes, kommandoen utføres, lydelementet røres ikke', async () => {
+  class Ctx {
+    constructor() { this.state = 'running'; this.destination = {}; }
+    resume() { return Promise.resolve(); }
+    decodeAudioData() { return new Promise(() => {}); }          // blir aldri ferdig
+    createBufferSource() { throw new Error('skal ikke brukes'); }
+  }
+  const handlers = {};
+  const ms = { metadata: null, playbackState: 'none', setActionHandler: (a, f) => { handlers[a] = f; }, setPositionState() {} };
+  const l = load({ storage: { shuffle: 'false' }, navigator: { onLine: true, mediaSession: ms },
+    extra: { AudioContext: Ctx, atob, MediaMetadata: class {} } });
+  pickFolder(l.env, SANGER);
+  let voiceBrukt = 0; l.env.el('voiceAudio').play = () => { voiceBrukt++; return Promise.resolve(); };
+  l.env.document.dispatch('click'); await run(l.env);
+  l.env.el('play').click(); await run(l.env);
+  handlers.nexttrack(); await run(l.env, 100);
+  assert.equal(l.audio.fileName, 'b.mp3', 'neste sang uten å vente på stemmen');
+  assert.equal(l.audio.paused, false);
+  assert.equal(voiceBrukt, 0);
+});

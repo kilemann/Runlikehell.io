@@ -196,6 +196,7 @@
     <p>Stopper musikken av seg selv? Slå av batterioptimalisering for Chrome i Android-innstillingene.</p>
     <h3>Versjoner</h3>
     <div class="ai-vlog">
+        <b>v1.9.7</b><span>Etter kodegjennomgang: stemmen kan ikke lenger ta over headset-kontrollene, og loggen gir ikke falsk alarm ved vanlig oppstart.</span>
         <b>v1.9.6</b><span>Tydeligere installasjonsråd: velg «Installer app», ikke snarvei.</span>
         <b>v1.9.5</b><span>«Kopier logg»-knapp: kopierer hele loggen med dato, eldste først, klar til å limes inn.</span>
         <b>v1.9.4</b><span>Musikken som sto stille uten melding (Neste virket, men ingenting i loggen) oppdages nå og startes på nytt.</span>
@@ -226,7 +227,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.9.6";
+const VERSION = "1.9.7";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -463,7 +464,8 @@ function flushPending() { const p = pending; pending = null; if (p) p.run(); }
 function dropPending() { const p = pending; pending = null; if (p) p.drop(); }
 
 /* Klippene spilles via Web Audio, ikke et eget lydelement: et ekstra lydelement tok over Android-kontrollene
-   (låseskjerm/headset), så «Resume» ikke nådde appen etter at stemmen hadde snakket (1.9.1). Uten Web Audio brukes lydelementet. */
+   (låseskjerm/headset), så «Resume» ikke nådde appen etter at stemmen hadde snakket (1.9.1).
+   Lydelementet brukes bare i nettlesere helt uten Web Audio. */
 let actx = null;
 const clipBuf = {};
 function audioCtx() {
@@ -520,6 +522,8 @@ function say(word, then, force) {
       else go();
       return;
     }
+    // Web Audio finnes, men klippet er ikke klart: dropp stemmen. Lydelementet ville tatt over Android-kontrollene (feilen i 1.9.0).
+    if (c) { end(true); return; }
     voiceEl.onended = () => end(true);
     voiceEl.onerror = () => { log("Stemme feilet (lydklipp)"); end(true); };
     voiceEl.src = clip;
@@ -708,13 +712,14 @@ const clock = (t) => { const d = new Date(t); return pad2(d.getHours()) + ":" + 
 const screenState = () => (document.visibilityState === "visible" ? "på" : "av/låst");
 (function () {
   const prev = recall(ALIVE_KEY, null);
-  if (prev && typeof prev.t === "number" && !prev.clean) {
-    log("Appen startet på nytt uten å ha blitt lukket. Sist i live " + clock(prev.t) + ", musikken " + (prev.spilte ? "spilte" : "var stoppet"));
+  // Bare når musikken spilte: at appen forsvinner mens den står stille (f.eks. sveipet bort) er normalt
+  if (prev && typeof prev.t === "number" && !prev.clean && prev.spilte) {
+    log("Appen ble lukket av telefonen mens musikken spilte (sist i live " + clock(prev.t) + ")");
   }
 })();
 let lastBeat = Date.now(), lastSave = 0, beatPlaying = false, beatToken = -1;
 function beat(clean) { store(ALIVE_KEY, { t: Date.now(), spilte: !audio.paused && !!audio.getAttribute("src"), clean: !!clean }); }
-setInterval(() => {
+function beatTick() {
   const now = Date.now(), gap = now - lastBeat;
   lastBeat = now;
   if (gap > 6000 && beatPlaying) log("Appen sto stille i " + Math.round(gap / 1000) + " s mens musikken spilte (Chrome frøs siden?), skjerm " + screenState());
@@ -722,10 +727,12 @@ setInterval(() => {
     log("Uventet pause oppdaget (ingen melding), prøver å fortsette");
     scheduleAutoResume();
   }
-  beatPlaying = !audio.paused && !!audio.getAttribute("src");
+  const playing = !audio.paused && !!audio.getAttribute("src");
+  // Lagres bare mens musikken spiller (hvert 5. s), og én gang når den stopper, så telefonen ikke skriver til lager unødig
+  if (playing ? now - lastSave >= 5000 : beatPlaying) { lastSave = now; beat(false); }
+  beatPlaying = playing;
   beatToken = loadToken;
-  if (now - lastSave >= 5000) { lastSave = now; beat(false); }
-}, 1000);
+}
 document.addEventListener("freeze", () => log("Chrome frøs siden (freeze)"));
 document.addEventListener("resume", () => log("Siden våknet igjen (resume)"));
 window.addEventListener("pagehide", () => beat(true));
@@ -733,7 +740,7 @@ window.addEventListener("pagehide", () => beat(true));
 /* ---------- Vakthund: sang som henger (tiden står stille mens den skal spille) ---------- */
 const HANG_MS = 10000;
 let lastT = -1, lastMove = 0;
-setInterval(() => {
+function hangTick() {
   if (audio.paused || seeking || !audio.getAttribute("src") || !tracks.length) { lastT = -1; return; }
   const now = Date.now();
   if (audio.currentTime !== lastT) { lastT = audio.currentTime; lastMove = now; return; }
@@ -744,7 +751,8 @@ setInterval(() => {
   log("Henger: " + t.name + ", hopper over");
   status("«" + t.name + "» henger, hopper over", true);
   skipAfterError();          // via feiltelleren, så en mappe der alt henger ikke går i ring
-}, 1000);
+}
+setInterval(() => { beatTick(); hangTick(); }, 1000);   // én felles klokke for levetegn og vakthund
 audio.addEventListener("loadedmetadata", () => { $("dur").textContent = fmt(audio.duration); updatePosition(); });
 let seeking = false;
 audio.addEventListener("timeupdate", () => {

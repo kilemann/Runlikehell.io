@@ -1,7 +1,7 @@
 # Runlikehell.io
 Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, bruker ingen datatrafikk.
 
-**Versjon:** 1.9.6 · Side: https://kilemann.github.io/Runlikehell.io/
+**Versjon:** 1.9.7 · Side: https://kilemann.github.io/Runlikehell.io/
 
 ## Oppbygging
 - `index.html` – forside med installasjonsinstruksjoner (nedlasting som fil er alternativ)
@@ -9,6 +9,7 @@ Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres
 - `app/index.html` – selve spilleren. Lastes ned som `Lommespiller.html` og virker som enkeltfil, eller brukes som installerbar app (PWA) med `sw.js` og `manifest.webmanifest`
 
 ## Versjoner
+- **1.9.7** – Etter kodegjennomgang. Stemmen: er et klipp ikke klargjort, droppes stemmen og kommandoen utføres, i stedet for å bruke det ekstra lydelementet som tok over headset-kontrollene i 1.9.0. Loggen: «Appen ble lukket av telefonen mens musikken spilte» vises bare når musikken faktisk spilte, ikke etter vanlig lukking. Levetegnet lagres bare mens musikken spiller. Levetegn og vakthund deler én klokke.
 - **1.9.6** – Installasjon ble bare en snarvei: forsiden (som samlesida lenker til) har ikke manifest, så «Legg til på startskjermen» derfra gir alltid snarvei. Instruksjonene sier nå: installer fra spilleren med «Installer app», ikke snarvei. Størrelse oppdatert til ca. 80 kB.
 - **1.9.5** – «📋 Kopier logg»-knapp i hendelsesloggen: kopierer hele loggen som tekst (eldste først, med dato og appversjon) til utklippstavla, så den kan limes rett inn i en melding. Nye logglinjer får dato.
 - **1.9.4** – Stopp som ikke sto i loggen: musikken sto stille, men Neste virket (appen levde). Trolige årsaker: sangstart avbrutt av Android med låst skjerm (play() avvist med AbortError, som før ble ignorert), eller en pause som ble skjult av en gammel pauseårsak. Nå: AbortError ved sangstart logges, en startvakt starter sangen på nytt hvis den står stille 2,5 s etter start uten at du har pauset, en vakt oppdager uventet pause midt i en sang og bruker automatisk fortsett, og pauseårsaker eldre enn 3 s brukes ikke lenger.
@@ -31,7 +32,7 @@ Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres
 - **1.0.0** – Første versjon: standardmappe lagret i appen, midlertidig mappe, shuffle, headset-/låseskjermkontroll (Media Session), offline (service worker).
 
 ## Tester
-Utviklet med test først (TDD) fra og med 1.5.0. Testene kjører spillerens eget skript i en simulert nettleser (lydelement, mappevalg, headset/låseskjerm, installasjon) og service workerne i en simulert worker.
+Testene kjører spillerens eget skript i en simulert nettleser (lydelement, mappevalg, headset/låseskjerm, installasjon) og service workerne i en simulert worker.
 
 ```
 npm test
@@ -50,4 +51,4 @@ Krever Node 22 eller nyere. Ingen avhengigheter.
 | `test/sw.test.js` | Service workerne, manifest og forsiden |
 | `test/release.test.js` | Versjonsnummer og endringslogg er like overalt |
 
-Ved ny versjon: skriv testen først, sett `version` i `package.json`, og oppdater så `VERSION` i `app/index.html` og `app/sw.js`, kommentaren og bunnteksten i `index.html`, og README (`**Versjon:**` og lista over).
+Ved ny versjon: sett `version` i `package.json`, og oppdater så `VERSION` i `app/index.html` og `app/sw.js`, kommentaren og bunnteksten i `index.html`, og README (`**Versjon:**` og lista over).

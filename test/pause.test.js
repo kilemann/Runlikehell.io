@@ -327,7 +327,7 @@ test('Appen som ble lukket av Chrome mens musikken spilte: neste oppstart logger
   const levetegn = l.env.storage.get('levetegn');
   assert.match(levetegn, /"spilte":true/);
   const igjen = ny({ storage: { levetegn } });
-  assert.ok(logg(igjen).some(m => /^Appen startet på nytt uten å ha blitt lukket\. Sist i live \d\d:\d\d:\d\d, musikken spilte/.test(m)));
+  assert.ok(logg(igjen).some(m => /^Appen ble lukket av telefonen mens musikken spilte \(sist i live \d\d:\d\d:\d\d\)/.test(m)));
 });
 
 test('Normal lukking (pagehide) gir ingen advarsel ved neste oppstart', async () => {
@@ -335,11 +335,11 @@ test('Normal lukking (pagehide) gir ingen advarsel ved neste oppstart', async ()
   l.env.el('play').click(); await run(l.env, 6000);
   l.env.winEvents.dispatch('pagehide');
   const igjen = ny({ storage: { levetegn: l.env.storage.get('levetegn') } });
-  assert.ok(!logg(igjen).some(m => m.startsWith('Appen startet på nytt')));
+  assert.ok(!logg(igjen).some(m => m.startsWith('Appen ble lukket av telefonen')));
 });
 
 test('Første oppstart (ingen levetegn) gir ingen advarsel', () => {
-  assert.ok(!logg(ny()).some(m => m.startsWith('Appen startet på nytt')));
+  assert.ok(!logg(ny()).some(m => m.startsWith('Appen ble lukket av telefonen')));
 });
 
 test('Appen som sto stille i over 6 s mens musikken spilte, logger det', async () => {
@@ -437,4 +437,21 @@ test('Gamle logglinjer uten dato kopieres uten dato', async () => {
   l.api.logg.unshift({ t: '10:00:00', msg: 'Gammel linje' });
   l.env.el('copyLog').click(); await run(l.env);
   assert.ok(l.utklipp.tekst.split('\n').includes('10:00:00  Gammel linje'));
+});
+
+/* ---------- 1.9.7: etter kodegjennomgang ---------- */
+test('Appen forsvant mens musikken sto på pause (f.eks. sveipet bort): ingen advarsel ved neste oppstart', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env, 6000);
+  l.env.el('play').click(); await run(l.env, 2000);          // pause
+  const levetegn = l.env.storage.get('levetegn');
+  assert.match(levetegn, /"spilte":false/, 'levetegnet oppdateres når musikken stopper');
+  const igjen = ny({ storage: { levetegn } });
+  assert.ok(!logg(igjen).some(m => m.startsWith('Appen ble lukket av telefonen')));
+});
+
+test('Levetegnet lagres ikke mens musikken står stille', async () => {
+  const l = ny();
+  await run(l.env, 30000);
+  assert.equal(l.env.storage.get('levetegn'), undefined);
 });
