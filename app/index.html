@@ -195,6 +195,7 @@
     <p>Stopper musikken av seg selv? Slå av batterioptimalisering for Chrome i Android-innstillingene.</p>
     <h3>Versjoner</h3>
     <div class="ai-vlog">
+        <b>v1.9.3</b><span>Loggen viser nå når Chrome har frosset eller lukket appen (stopp uten melding fra lydelementet).</span>
         <b>v1.9.2</b><span>Når Android stopper lyden igjen og igjen rett etter et sangbytte, prøver appen videre med økende pauser i stedet for å gi opp etter noen sekunder. Mindre støy i loggen.</span>
         <b>v1.9.1</b><span>Retter at «Resume» fra headsettet ikke nådde appen etter at stemmen hadde snakket.</span>
         <b>v1.9.0</b><span>Stemmen er nå ferdige lydklipp og virker hver gang. Automatisk fortsett prøver på nytt, og loggen viser mer og rommer 300 linjer.</span>
@@ -221,7 +222,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.9.2";
+const VERSION = "1.9.3";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -646,6 +647,31 @@ $("autoResume").addEventListener("click", () => {
   if (!autoResumeOn) cancelAutoResume();
 });
 $("clearLog").addEventListener("click", () => { logg = []; store("logg", logg); renderLog(); });
+
+/* ---------- Levetegn (1.9.3): stopp som ikke kommer fra lydelementet ----------
+   Stopper musikken uten at loggen får noe, er det trolig Chrome som har frosset eller lukket siden (Android sparer strøm
+   eller minne). Appen lagrer derfor et levetegn hvert 5. sekund og logger når den vet at den har vært borte. */
+const ALIVE_KEY = "levetegn";
+const clock = (t) => { const d = new Date(t); return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()); };
+const screenState = () => (document.visibilityState === "visible" ? "på" : "av/låst");
+(function () {
+  const prev = recall(ALIVE_KEY, null);
+  if (prev && typeof prev.t === "number" && !prev.clean) {
+    log("Appen startet på nytt uten å ha blitt lukket. Sist i live " + clock(prev.t) + ", musikken " + (prev.spilte ? "spilte" : "var stoppet"));
+  }
+})();
+let lastBeat = Date.now(), lastSave = 0, beatPlaying = false;
+function beat(clean) { store(ALIVE_KEY, { t: Date.now(), spilte: !audio.paused && !!audio.getAttribute("src"), clean: !!clean }); }
+setInterval(() => {
+  const now = Date.now(), gap = now - lastBeat;
+  lastBeat = now;
+  if (gap > 6000 && beatPlaying) log("Appen sto stille i " + Math.round(gap / 1000) + " s mens musikken spilte (Chrome frøs siden?), skjerm " + screenState());
+  beatPlaying = !audio.paused && !!audio.getAttribute("src");
+  if (now - lastSave >= 5000) { lastSave = now; beat(false); }
+}, 1000);
+document.addEventListener("freeze", () => log("Chrome frøs siden (freeze)"));
+document.addEventListener("resume", () => log("Siden våknet igjen (resume)"));
+window.addEventListener("pagehide", () => beat(true));
 
 /* ---------- Vakthund: sang som henger (tiden står stille mens den skal spille) ---------- */
 const HANG_MS = 10000;

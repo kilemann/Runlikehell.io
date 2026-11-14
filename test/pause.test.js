@@ -319,3 +319,49 @@ test('«Lyden venter på data» logges ikke ved start av sang, bare midt i en sa
   l.audio.currentTime = 30; l.audio.dispatch('waiting');
   assert.ok(logg(l).includes('Lyden venter på data (buffer tom)'));
 });
+
+/* ---------- 1.9.3: stopp som ikke kommer fra lydelementet ---------- */
+test('Appen som ble lukket av Chrome mens musikken spilte: neste oppstart logger det', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env, 6000);       // levetegn lagres hvert 5. s
+  const levetegn = l.env.storage.get('levetegn');
+  assert.match(levetegn, /"spilte":true/);
+  const igjen = ny({ storage: { levetegn } });
+  assert.ok(logg(igjen).some(m => /^Appen startet på nytt uten å ha blitt lukket\. Sist i live \d\d:\d\d:\d\d, musikken spilte/.test(m)));
+});
+
+test('Normal lukking (pagehide) gir ingen advarsel ved neste oppstart', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env, 6000);
+  l.env.winEvents.dispatch('pagehide');
+  const igjen = ny({ storage: { levetegn: l.env.storage.get('levetegn') } });
+  assert.ok(!logg(igjen).some(m => m.startsWith('Appen startet på nytt')));
+});
+
+test('Første oppstart (ingen levetegn) gir ingen advarsel', () => {
+  assert.ok(!logg(ny()).some(m => m.startsWith('Appen startet på nytt')));
+});
+
+test('Appen som sto stille i over 6 s mens musikken spilte, logger det', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env, 3000);
+  l.env.setNow(Date.now() + 40000);                         // Chrome frøs siden i 40 s uten at klokka tikket
+  await run(l.env, 1000);
+  assert.ok(logg(l).some(m => /^Appen sto stille i \d+ s mens musikken spilte/.test(m)));
+});
+
+test('Pauset app som ikke tikker (strømsparing) regnes ikke som frosset', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env, 2000);
+  l.env.el('play').click(); await run(l.env, 2000);
+  l.env.setNow(Date.now() + 120000);
+  await run(l.env, 2000);
+  assert.ok(!logg(l).some(m => m.startsWith('Appen sto stille')));
+});
+
+test('Chromes freeze og resume logges', async () => {
+  const l = ny();
+  l.env.document.dispatch('freeze'); l.env.document.dispatch('resume');
+  assert.ok(logg(l).includes('Chrome frøs siden (freeze)'));
+  assert.ok(logg(l).includes('Siden våknet igjen (resume)'));
+});
