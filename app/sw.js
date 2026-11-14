@@ -1,6 +1,6 @@
 // Lommespiller service worker – gjør appen tilgjengelig uten nett.
 // Bytt versjonsnummeret ved hver ny versjon, så hentes de nye filene.
-const VERSION = "1.9.4";
+const VERSION = "1.9.5";
 const CACHE = "lopespiller-" + VERSION;   // prefiks beholdt fra før navnebyttet
 const FILES = [
   "./",

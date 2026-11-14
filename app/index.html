@@ -166,7 +166,8 @@
     <summary>Hendelseslogg</summary>
     <p class="note" style="margin:8px 0 0">Viser hva som stoppet eller byttet musikken. Nyeste øverst.</p>
     <ol class="log" id="log"></ol>
-    <button class="btn full" id="clearLog">Tøm logg</button>
+    <button class="btn full" id="copyLog">📋 Kopier logg</button>
+    <button class="btn full" id="clearLog" style="margin-top:8px">Tøm logg</button>
   </details>
 
   <div id="installBox" class="hidden">
@@ -195,6 +196,7 @@
     <p>Stopper musikken av seg selv? Slå av batterioptimalisering for Chrome i Android-innstillingene.</p>
     <h3>Versjoner</h3>
     <div class="ai-vlog">
+        <b>v1.9.5</b><span>«Kopier logg»-knapp: kopierer hele loggen med dato, eldste først, klar til å limes inn.</span>
         <b>v1.9.4</b><span>Musikken som sto stille uten melding (Neste virket, men ingenting i loggen) oppdages nå og startes på nytt.</span>
         <b>v1.9.3</b><span>Loggen viser nå når Chrome har frosset eller lukket appen (stopp uten melding fra lydelementet).</span>
         <b>v1.9.2</b><span>Når Android stopper lyden igjen og igjen rett etter et sangbytte, prøver appen videre med økende pauser i stedet for å gi opp etter noen sekunder. Mindre støy i loggen.</span>
@@ -223,7 +225,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.9.4";
+const VERSION = "1.9.5";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -262,7 +264,7 @@ const LOG_MAX = 300;
 let logg = (() => { const v = recall("logg", []); return Array.isArray(v) ? v.filter((e) => e && typeof e.msg === "string") : []; })();
 function log(msg) {
   const d = new Date();
-  logg.push({ t: pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()), msg: msg });
+  logg.push({ t: pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()), d: pad2(d.getDate()) + "." + pad2(d.getMonth() + 1), msg: msg });
   if (logg.length > LOG_MAX) logg.splice(0, logg.length - LOG_MAX);
   store("logg", logg);
   renderLog();
@@ -671,6 +673,31 @@ $("autoResume").addEventListener("click", () => {
   if (!autoResumeOn) cancelAutoResume();
 });
 $("clearLog").addEventListener("click", () => { logg = []; store("logg", logg); renderLog(); });
+
+/* Kopier logg (1.9.5): eldste først, med dato, klar til å limes inn i en melding */
+function logText() {
+  return "Lommespiller v" + VERSION + " · logg (" + logg.length + " linjer, eldste først)\n" +
+    logg.map((e) => (e.d ? e.d + " " : "") + e.t + "  " + e.msg).join("\n");
+}
+function copyFallback(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) {}
+  ta.remove();
+  return ok;
+}
+function copied(ok) {
+  const b = $("copyLog");
+  b.textContent = ok ? "✓ Kopiert" : "Klarte ikke å kopiere";
+  setTimeout(() => { b.textContent = "📋 Kopier logg"; }, 2000);
+}
+$("copyLog").addEventListener("click", () => {
+  const text = logText();
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => copied(true), () => copied(copyFallback(text)));
+  else copied(copyFallback(text));
+});
 
 /* ---------- Levetegn (1.9.3): stopp som ikke kommer fra lydelementet ----------
    Stopper musikken uten at loggen får noe, er det trolig Chrome som har frosset eller lukket siden (Android sparer strøm

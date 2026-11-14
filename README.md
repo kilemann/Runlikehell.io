@@ -1,7 +1,7 @@
 # Runlikehell.io
 Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, bruker ingen datatrafikk.
 
-**Versjon:** 1.9.4 · Side: https://kilemann.github.io/Runlikehell.io/
+**Versjon:** 1.9.5 · Side: https://kilemann.github.io/Runlikehell.io/
 
 ## Oppbygging
 - `index.html` – forside med installasjonsinstruksjoner (nedlasting som fil er alternativ)
@@ -9,6 +9,7 @@ Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres
 - `app/index.html` – selve spilleren. Lastes ned som `Lommespiller.html` og virker som enkeltfil, eller brukes som installerbar app (PWA) med `sw.js` og `manifest.webmanifest`
 
 ## Versjoner
+- **1.9.5** – «📋 Kopier logg»-knapp i hendelsesloggen: kopierer hele loggen som tekst (eldste først, med dato og appversjon) til utklippstavla, så den kan limes rett inn i en melding. Nye logglinjer får dato.
 - **1.9.4** – Stopp som ikke sto i loggen: musikken sto stille, men Neste virket (appen levde). Trolige årsaker: sangstart avbrutt av Android med låst skjerm (play() avvist med AbortError, som før ble ignorert), eller en pause som ble skjult av en gammel pauseårsak. Nå: AbortError ved sangstart logges, en startvakt starter sangen på nytt hvis den står stille 2,5 s etter start uten at du har pauset, en vakt oppdager uventet pause midt i en sang og bruker automatisk fortsett, og pauseårsaker eldre enn 3 s brukes ikke lenger.
 - **1.9.3** – Diagnose av stopp som ikke kommer fra lydelementet (og derfor ikke sto i loggen): appen lagrer et levetegn hvert 5. s. Loggen viser nå «Appen startet på nytt uten å ha blitt lukket» (med når den sist var i live og om musikken spilte), «Appen sto stille i N s mens musikken spilte» og Chromes freeze/resume. Ingen endring i selve avspillingen.
 - **1.9.2** – Retter at appen ga opp etter 6 sekunder da Android stoppet lyden fire ganger rett etter et sangbytte med låst skjerm (alle stopp 0–1 s inn i sangen). Tette stopp regnes nå som én runde, og appen prøver videre med økende pauser (1,5 – 3 – 6 – 12 – 20 s). Maks 3 runder på 5 min. «Lyden venter på data» logges bare midt i en sang.

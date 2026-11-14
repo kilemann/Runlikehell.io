@@ -400,3 +400,41 @@ test('Bevisst pause startes ikke på nytt av vaktene', async () => {
   assert.equal(l.audio.paused, true);
   assert.ok(!logg(l).some(m => /Uventet pause|sto stille 2,5 s/.test(m)));
 });
+
+/* ---------- 1.9.5: kopier logg ---------- */
+function medUtklipp(opts = {}) {
+  const utklipp = { tekst: null, writeText(t) { if (opts.feil) return Promise.reject(new Error('nektet')); this.tekst = t; return Promise.resolve(); } };
+  const handlers = {};
+  const ms = { metadata: null, playbackState: 'none', setActionHandler: (a, f) => { handlers[a] = f; }, setPositionState() {} };
+  const l = load({ storage: { shuffle: 'false' }, navigator: { onLine: true, mediaSession: ms, clipboard: utklipp },
+    extra: { MediaMetadata: class { constructor(o) { Object.assign(this, o); } } } });
+  pickFolder(l.env, SANGER);
+  return { ...l, utklipp };
+}
+
+test('«Kopier logg» kopierer hele loggen, eldste først, med versjon og dato', async () => {
+  const l = medUtklipp();
+  l.env.el('play').click(); await run(l.env);
+  l.env.el('next').click(); await run(l.env);
+  l.env.el('copyLog').click(); await run(l.env);
+  const linjer = l.utklipp.tekst.split('\n');
+  assert.match(linjer[0], new RegExp('^Lommespiller v' + l.api.VERSION.replace(/\./g, '\\.') + ' · logg'));
+  assert.match(linjer[1], /^\d\d\.\d\d \d\d:\d\d:\d\d  Mappe valgt: Musikk/);
+  assert.match(linjer[linjer.length - 1], /Ny sang: b$/);
+  assert.equal(l.env.el('copyLog').textContent, '✓ Kopiert');
+  await run(l.env, 2100);
+  assert.equal(l.env.el('copyLog').textContent, '📋 Kopier logg');
+});
+
+test('«Kopier logg» uten tilgang til utklippstavla viser at det ikke gikk, uten krasj', async () => {
+  const l = medUtklipp({ feil: true });
+  l.env.el('copyLog').click(); await run(l.env);
+  assert.match(l.env.el('copyLog').textContent, /Kopiert|Klarte ikke/);
+});
+
+test('Gamle logglinjer uten dato kopieres uten dato', async () => {
+  const l = medUtklipp();
+  l.api.logg.unshift({ t: '10:00:00', msg: 'Gammel linje' });
+  l.env.el('copyLog').click(); await run(l.env);
+  assert.ok(l.utklipp.tekst.split('\n').includes('10:00:00  Gammel linje'));
+});
