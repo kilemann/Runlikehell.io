@@ -365,3 +365,38 @@ test('Chromes freeze og resume logges', async () => {
   assert.ok(logg(l).includes('Chrome frøs siden (freeze)'));
   assert.ok(logg(l).includes('Siden våknet igjen (resume)'));
 });
+
+/* ---------- 1.9.4: musikk som stopper i det stille (Neste virker, ingenting i loggen) ---------- */
+test('Sangstart avbrutt (AbortError) uten at du pauset: logges og startes på nytt etter 2,5 s', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env);
+  const ekte = l.audio.play.bind(l.audio);
+  l.audio.play = function () { this.playLog.push(this.fileName); return Promise.reject(Object.assign(new Error('avbrutt'), { name: 'AbortError' })); };
+  l.env.el('next').click(); await run(l.env);
+  l.audio.paused = true;
+  l.audio.play = ekte;
+  assert.ok(logg(l).includes('Sangstart avbrutt (AbortError)'));
+  await run(l.env, 2600);
+  assert.equal(l.audio.paused, false);
+  assert.equal(spilt(l), 'b.mp3', 'samme sang, ingen hopp-over');
+  assert.ok(logg(l).some(m => m.startsWith('Musikken sto stille 2,5 s etter sangstart')));
+});
+
+test('Musikk som stopper uten pause-hendelse midt i en sang oppdages og fortsetter', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env);
+  for (let i = 0; i < 5; i++) { l.audio.currentTime += 1; await run(l.env, 1000); }
+  l.audio.paused = true;                                   // stopper i det stille
+  await run(l.env, 1000);
+  assert.ok(logg(l).includes('Uventet pause oppdaget (ingen melding), prøver å fortsette'));
+  await run(l.env, 1600);
+  assert.equal(l.audio.paused, false);
+});
+
+test('Bevisst pause startes ikke på nytt av vaktene', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env);
+  l.handlers.pause(); await run(l.env, 10000);
+  assert.equal(l.audio.paused, true);
+  assert.ok(!logg(l).some(m => /Uventet pause|sto stille 2,5 s/.test(m)));
+});

@@ -195,6 +195,7 @@
     <p>Stopper musikken av seg selv? Slå av batterioptimalisering for Chrome i Android-innstillingene.</p>
     <h3>Versjoner</h3>
     <div class="ai-vlog">
+        <b>v1.9.4</b><span>Musikken som sto stille uten melding (Neste virket, men ingenting i loggen) oppdages nå og startes på nytt.</span>
         <b>v1.9.3</b><span>Loggen viser nå når Chrome har frosset eller lukket appen (stopp uten melding fra lydelementet).</span>
         <b>v1.9.2</b><span>Når Android stopper lyden igjen og igjen rett etter et sangbytte, prøver appen videre med økende pauser i stedet for å gi opp etter noen sekunder. Mindre støy i loggen.</span>
         <b>v1.9.1</b><span>Retter at «Resume» fra headsettet ikke nådde appen etter at stemmen hadde snakket.</span>
@@ -222,7 +223,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.9.3";
+const VERSION = "1.9.4";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -282,6 +283,9 @@ let shuffleOn = recall("shuffle", true);
 let curUrl = null;
 let errorsInRow = 0;
 let loadToken = 0;
+let androidPauseSeen = false; // en Android-pause er alt håndtert av pause-hendelsen
+let userPaused = false;       // du eller headsettet har pauset bevisst (1.9.4)
+let pauseReasonAt = 0;
 let pauseReason = null;      // hvem som ba om neste pause-hendelse. Ingen = Android stoppet lyden
 let autoResumeOn = recall("autoResume", true);
 let autoTimer = null;        // venter på å fortsette etter Android-pause
@@ -335,19 +339,35 @@ async function loadAt(newPos, autoplay) {
   const token = ++loadToken;
   renderNow(t);
   log("Ny sang: " + niceName(t.name));
-  if (!audio.paused) pauseReason = "bytte";
+  if (!audio.paused) { pauseReason = "bytte"; pauseReasonAt = Date.now(); }
   if (curUrl) URL.revokeObjectURL(curUrl);
   curUrl = URL.createObjectURL(t.file);      // peker rett på filen på telefonen, ingen kopi
   audio.src = curUrl;
   updateMetadata(t);
   if (!autoplay) return;
+  let blocked = false;
   try {
     await audio.play();
     status("");
   } catch (e) {
-    if (token !== loadToken || playInterrupted(e)) return;
+    if (token !== loadToken) return;
+    if (e && e.name === "NotAllowedError") blocked = true;
+    else if (e && e.name === "AbortError" && !userPaused) log("Sangstart avbrutt (AbortError)");
+    if (playInterrupted(e)) { if (!blocked) startGuard(token); return; }
     fileFailed(t, e && e.name);
+    return;
   }
+  startGuard(token);
+}
+
+/* Startvakt (1.9.4): står musikken stille 2,5 s etter sangstart uten at du har pauset, og uten melding fra Android,
+   har noe stoppet den i det stille (f.eks. avbrutt start med låst skjerm). Da startes sangen på nytt, én gang. */
+function startGuard(token) {
+  setTimeout(() => {
+    if (token !== loadToken || !audio.paused || userPaused || androidPauseSeen || autoTimer || !audio.getAttribute("src")) return;
+    log("Musikken sto stille 2,5 s etter sangstart uten melding, starter på nytt");
+    audio.play().catch((e) => { if (e && e.name !== "AbortError") log("Klarte ikke å starte på nytt (" + ((e && e.name) || "ukjent") + ")"); });
+  }, 2500);
 }
 
 /* play() som ble avbrutt (pause eller ny sang før den rakk å starte) eller nektet av telefonen, er ikke en ødelagt fil */
@@ -391,7 +411,8 @@ function play(src) {
 function pause(src) {
   flushPending();
   cancelAutoResume();
-  if (!audio.paused) { pauseReason = src || "app"; if (src) log("Pause (" + SRC[src] + ")"); }
+  userPaused = true;
+  if (!audio.paused) { pauseReason = src || "app"; pauseReasonAt = Date.now(); if (src) log("Pause (" + SRC[src] + ")"); }
   audio.pause();
 }
 function toggle() { audio.paused ? play("app") : pause("app"); }
@@ -411,7 +432,8 @@ function prev(src) {
 function stop() {
   dropPending();
   cancelAutoResume();
-  if (!audio.paused) pauseReason = "bytte";
+  userPaused = true;
+  if (!audio.paused) { pauseReason = "bytte"; pauseReasonAt = Date.now(); }
   loadToken++;
   audio.pause();
   audio.removeAttribute("src");
@@ -521,7 +543,7 @@ function headsetPlay() {
 function headsetNext() {
   flushPending();
   if (!tracks.length) return;
-  if (HAS_VOICE && voiceOn && !audio.paused) { pauseReason = "bytte"; audio.pause(); }
+  if (HAS_VOICE && voiceOn && !audio.paused) { pauseReason = "bytte"; pauseReasonAt = Date.now(); audio.pause(); }
   say("Next", () => next("headset"));
 }
 
@@ -569,13 +591,15 @@ if ("mediaSession" in navigator) {
 }
 
 /* ---------- Lydhendelser ---------- */
-audio.addEventListener("play", () => { pauseReason = null; setPlayIcon(true); });
+audio.addEventListener("play", () => { pauseReason = null; userPaused = false; androidPauseSeen = false; setPlayIcon(true); });
 audio.addEventListener("playing", () => { errorsInRow = 0; });
 audio.addEventListener("pause", () => {
   setPlayIcon(false);
-  const reason = pauseReason; pauseReason = null;
+  let reason = pauseReason; pauseReason = null;
+  if (reason && Date.now() - pauseReasonAt > 3000) reason = null;    // gammel årsak som ikke ble brukt: ikke la den skjule en ekte Android-pause
   if (reason || audio.ended || !audio.getAttribute("src")) return;
   // Verken appen eller headsettet ba om pause: Android stoppet lyden (Bluetooth-brudd, annen app, varsel)
+  androidPauseSeen = true;
   log("Stoppet av Android (Bluetooth-brudd eller annen lyd) · skjerm " + (document.visibilityState === "visible" ? "på" : "av/låst") + ", etter " + Math.round(audio.currentTime) + " s i sangen");
   scheduleAutoResume();
 });
@@ -660,13 +684,18 @@ const screenState = () => (document.visibilityState === "visible" ? "på" : "av/
     log("Appen startet på nytt uten å ha blitt lukket. Sist i live " + clock(prev.t) + ", musikken " + (prev.spilte ? "spilte" : "var stoppet"));
   }
 })();
-let lastBeat = Date.now(), lastSave = 0, beatPlaying = false;
+let lastBeat = Date.now(), lastSave = 0, beatPlaying = false, beatToken = -1;
 function beat(clean) { store(ALIVE_KEY, { t: Date.now(), spilte: !audio.paused && !!audio.getAttribute("src"), clean: !!clean }); }
 setInterval(() => {
   const now = Date.now(), gap = now - lastBeat;
   lastBeat = now;
   if (gap > 6000 && beatPlaying) log("Appen sto stille i " + Math.round(gap / 1000) + " s mens musikken spilte (Chrome frøs siden?), skjerm " + screenState());
+  if (beatPlaying && autoResumeOn && audio.paused && !userPaused && !androidPauseSeen && !autoTimer && !audio.ended && audio.getAttribute("src") && loadToken === beatToken && !pending) {
+    log("Uventet pause oppdaget (ingen melding), prøver å fortsette");
+    scheduleAutoResume();
+  }
   beatPlaying = !audio.paused && !!audio.getAttribute("src");
+  beatToken = loadToken;
   if (now - lastSave >= 5000) { lastSave = now; beat(false); }
 }, 1000);
 document.addEventListener("freeze", () => log("Chrome frøs siden (freeze)"));
