@@ -189,12 +189,13 @@
     <p>Pause, neste og forrige styres fra headsettet, låseskjermen og varslingsfeltet. Hvilket tapp som gjør hva, bestemmes av headsettet.</p>
     <p>Under <b>Stemme</b> kan du slå på en talestemme som sier «Pause», «Resume» og «Next» når du trykker på headsettet. Stemmen ligger ferdig innebygd i appen, så den virker hver gang og uten nett.</p>
     <h3>Fortsett automatisk</h3>
-    <p>Stopper Android musikken (Bluetooth-brudd, annen app eller varsel), fortsetter den av seg selv etter 1,5 sekunder (prøver opptil 3 ganger hvis det ikke går), maks 3 stopp på 5 minutter. Kan slås av. <b>Hendelseslogg</b> viser hva som stoppet eller byttet musikken.</p>
+    <p>Stopper Android musikken (Bluetooth-brudd, annen app eller varsel), fortsetter den av seg selv etter 1,5 sekunder. Stopper den igjen og igjen, prøver appen videre med økende pauser (opptil 20 s). Maks 3 slike runder på 5 minutter. Kan slås av. <b>Hendelseslogg</b> viser hva som stoppet eller byttet musikken.</p>
     <h3>Personvern og nett</h3>
     <p>Sangene spilles rett fra telefonen. Ingenting kopieres eller lastes opp, og appen bruker ingen datatrafikk etter at den er installert. Mappa må velges på nytt hver gang appen åpnes.</p>
     <p>Stopper musikken av seg selv? Slå av batterioptimalisering for Chrome i Android-innstillingene.</p>
     <h3>Versjoner</h3>
     <div class="ai-vlog">
+        <b>v1.9.2</b><span>Når Android stopper lyden igjen og igjen rett etter et sangbytte, prøver appen videre med økende pauser i stedet for å gi opp etter noen sekunder. Mindre støy i loggen.</span>
         <b>v1.9.1</b><span>Retter at «Resume» fra headsettet ikke nådde appen etter at stemmen hadde snakket.</span>
         <b>v1.9.0</b><span>Stemmen er nå ferdige lydklipp og virker hver gang. Automatisk fortsett prøver på nytt, og loggen viser mer og rommer 300 linjer.</span>
         <b>v1.8.0</b><span>Navn, versjon og info-knapp øverst til venstre, som i de andre appene.</span>
@@ -220,7 +221,7 @@
 
 <script>
 "use strict";
-const VERSION = "1.9.1";
+const VERSION = "1.9.2";
 const ICON = document.querySelector('link[rel="icon"]').href;   // innebygd ikon, virker også i nedlastet fil
 const IS_WEB = /^https?:$/.test(location.protocol);
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm|mp4|3gp)$/i;
@@ -579,7 +580,7 @@ audio.addEventListener("pause", () => {
 });
 audio.addEventListener("ended", () => next());
 let lastWait = 0;
-audio.addEventListener("waiting", () => { const n = Date.now(); if (!audio.paused && n - lastWait > 10000) { lastWait = n; log("Lyden venter på data (buffer tom)"); } });
+audio.addEventListener("waiting", () => { const n = Date.now(); if (!audio.paused && audio.currentTime > 2 && n - lastWait > 10000) { lastWait = n; log("Lyden venter på data (buffer tom)"); } });
 audio.addEventListener("error", () => {
   if (!audio.getAttribute("src")) return;
   const t = currentTrack();
@@ -590,19 +591,35 @@ audio.addEventListener("error", () => {
 
 /* ---------- Fortsett automatisk når Android stopper musikken ---------- */
 function cancelAutoResume() { if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; } }
-const RESUME_WAIT = [1500, 2500, 4000];   // ventetid før hvert forsøk, hvis lyden fortsatt står stille
+/* En «stopp-runde» er flere Android-stopp tett etter hverandre (under 30 s mellom). Slike stopp skjer ofte
+   rett etter et sangbytte med låst skjerm: Android stopper lyden igjen med en gang vi fortsetter.
+   Da prøver vi med økende pauser (1,5 – 3 – 6 – 12 – 20 s) i stedet for å gi opp etter 3 raske forsøk (1.9.2). */
+const RESUME_WAIT = [1500, 3000, 6000, 12000, 20000];
+const ROUND_GAP = 30000;
+let roundIdx = 0, lastStopAt = 0;
 function scheduleAutoResume() {
   cancelAutoResume();
   if (!autoResumeOn) return;
   const now = Date.now();
-  autoTimes = autoTimes.filter((x) => now - x < 5 * 60000);
-  if (autoTimes.length >= 3) {
-    // Sikring: kobles headsettet fra for godt, skal ikke musikken fortsette på høyttaleren igjen og igjen
-    log("Fortsetter ikke automatisk (stoppet 3 ganger på 5 min)");
-    status("Android stoppet musikken flere ganger. Trykk spill for å fortsette.", true);
+  if (lastStopAt && now - lastStopAt < ROUND_GAP) roundIdx++;       // samme runde: lengre pause for hver gang
+  else {
+    roundIdx = 0;                                                    // ny runde
+    autoTimes = autoTimes.filter((x) => now - x < 5 * 60000);
+    if (autoTimes.length >= 3) {
+      // Sikring: kobles headsettet fra for godt, skal ikke musikken fortsette på høyttaleren igjen og igjen
+      lastStopAt = now;
+      log("Fortsetter ikke automatisk (3 stopp-runder på 5 min)");
+      status("Android stoppet musikken flere ganger. Trykk spill for å fortsette.", true);
+      return;
+    }
+    autoTimes.push(now);
+  }
+  lastStopAt = now;
+  if (roundIdx >= RESUME_WAIT.length) {
+    log("Fortsetter ikke automatisk (Android stoppet lyden " + (roundIdx + 1) + " ganger på rad)");
+    status("Android stoppet musikken igjen og igjen. Trykk spill for å fortsette.", true);
     return;
   }
-  autoTimes.push(now);                      // teller som én stopp, uansett hvor mange forsøk som trengs
   const token = loadToken, t0 = now;
   const attempt = (n) => {
     autoTimer = setTimeout(() => {
@@ -613,10 +630,10 @@ function scheduleAutoResume() {
         .catch((e) => {
           const why = (e && e.name) || "ukjent";
           if (why === "AbortError") return;
-          if (n + 1 < RESUME_WAIT.length && why !== "NotAllowedError") { log("Forsøk " + (n + 1) + " å fortsette feilet (" + why + "), prøver igjen"); attempt(n + 1); }
+          if (why !== "NotAllowedError" && n + 1 < 3) { log("Forsøk " + (n + 1) + " å fortsette feilet (" + why + "), prøver igjen"); attempt(n + 1); }
           else log("Klarte ikke å fortsette automatisk (" + why + ")");
         });
-    }, RESUME_WAIT[n]);
+    }, n === 0 ? RESUME_WAIT[roundIdx] : RESUME_WAIT[Math.min(roundIdx + n, RESUME_WAIT.length - 1)]);
   };
   attempt(0);
 }

@@ -1,7 +1,7 @@
 # Runlikehell.io
 Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres med headset og låseskjerm, bruker ingen datatrafikk.
 
-**Versjon:** 1.9.1 · Side: https://kilemann.github.io/Runlikehell.io/
+**Versjon:** 1.9.2 · Side: https://kilemann.github.io/Runlikehell.io/
 
 ## Oppbygging
 - `index.html` – forside med installasjonsinstruksjoner (nedlasting som fil er alternativ)
@@ -9,6 +9,7 @@ Lommespiller – enkel musikkspiller: shuffle fra en mappe på telefonen, styres
 - `app/index.html` – selve spilleren. Lastes ned som `Lommespiller.html` og virker som enkeltfil, eller brukes som installerbar app (PWA) med `sw.js` og `manifest.webmanifest`
 
 ## Versjoner
+- **1.9.2** – Retter at appen ga opp etter 6 sekunder da Android stoppet lyden fire ganger rett etter et sangbytte med låst skjerm (alle stopp 0–1 s inn i sangen). Tette stopp regnes nå som én runde, og appen prøver videre med økende pauser (1,5 – 3 – 6 – 12 – 20 s). Maks 3 runder på 5 min. «Lyden venter på data» logges bare midt i en sang.
 - **1.9.1** – Retter at «Resume» fra headsettet ikke gjorde noe etter at stemmen hadde sagt «Pause»: stemmeklippet var et eget lydelement som tok over Android-kontrollene. Klippene spilles nå via Web Audio, som ikke berører mediakontrollene. Loggen viser «Headset: spill-kommando mottatt» når Resume når appen.
 - **1.9.0** – Stemmen virket bare første gang: loggen viste «synthesis-failed» hver gang telefonens talesyntese ble brukt med låst skjerm. Nå er «Pause», «Resume», «Next» og «Play» ferdige lydklipp (kvinnestemme) innebygd i appen, spilt som vanlig lyd, uten nett. Valg av stemme er fjernet. Automatisk fortsett starter etter 1,5 s, prøver opptil 3 ganger per stopp, og avbrytes av ny sang. Loggen rommer 300 linjer, og et stopp fra Android logger skjermstatus og posisjon i sangen.
 - **1.8.0** – Navn, versjon og info-knapp (i) øverst til venstre, med bruksanvisning og versjonsliste.

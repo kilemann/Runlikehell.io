@@ -84,7 +84,7 @@ test('Automatisk fortsett avbrytes hvis du selv trykker pause i ventetiden', asy
 test('Automatisk fortsett gis opp etter 3 ganger på 5 minutter, så den ikke spiller på høyttaleren i det uendelige', async () => {
   const l = ny();
   l.env.el('play').click(); await run(l.env);
-  for (let i = 0; i < 3; i++) { androidPause(l); await run(l.env, 2500); assert.equal(l.audio.paused, false, `forsøk ${i + 1}`); }
+  for (let i = 0; i < 3; i++) { androidPause(l); await run(l.env, 2500); assert.equal(l.audio.paused, false, `forsøk ${i + 1}`); await run(l.env, 31000); }
   androidPause(l); await run(l.env, 2500);
   assert.equal(l.audio.paused, true);
   assert.match(sisteLogg(l), /Fortsetter ikke automatisk/);
@@ -257,9 +257,11 @@ test('Mislykket forsøk på å fortsette prøves på nytt, og teller som én sto
   await run(l.env, 3000);
   assert.equal(l.audio.paused, false, 'andre forsøk lykkes');
   assert.ok(logg(l).some(m => m.startsWith('Forsøk 1 å fortsette feilet')));
+  await run(l.env, 31000);
   androidPause(l); await run(l.env, 2000);
+  await run(l.env, 31000);
   androidPause(l); await run(l.env, 2000);
-  assert.equal(l.audio.paused, false, 'tre stopp er fortsatt innenfor kvoten');
+  assert.equal(l.audio.paused, false, 'tre stopp-runder er fortsatt innenfor kvoten');
 });
 
 test('Neste sang mens automatisk fortsett venter: ventende forsøk avbrytes', async () => {
@@ -277,4 +279,43 @@ test('Stopp av Android logger skjermstatus og posisjon', async () => {
   l.env.el('play').click(); await run(l.env);
   androidPause(l);
   assert.match(sisteLogg(l), /skjerm (på|av\/låst).*s i sangen/);
+});
+
+test('Android stopper lyden igjen med en gang etter hvert forsøk: prøver videre med økende pauser, gir opp etter 5', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env);
+  const venter = [1500, 3000, 6000, 12000, 20000];
+  androidPause(l);
+  for (let i = 0; i < venter.length; i++) {
+    await run(l.env, venter[i] - 100);
+    assert.equal(l.audio.paused, true, `pause ${i + 1} ikke over før ${venter[i]} ms`);
+    await run(l.env, 150);
+    assert.equal(l.audio.paused, false, `forsøk ${i + 1} fortsetter`);
+    await run(l.env, 900);
+    androidPause(l);                                   // Android stopper igjen etter ca. 1 s
+  }
+  await run(l.env, 60000);
+  assert.equal(l.audio.paused, true);
+  assert.match(sisteLogg(l), /Fortsetter ikke automatisk \(Android stoppet lyden 6 ganger på rad\)/);
+  assert.match(l.env.el('status').textContent, /igjen og igjen/);
+});
+
+test('Stopp langt fra hverandre er nye runder og starter på 1,5 s igjen', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env);
+  androidPause(l); await run(l.env, 1600);
+  await run(l.env, 1000); androidPause(l); await run(l.env, 3100);
+  assert.equal(l.audio.paused, false);
+  await run(l.env, 30000);
+  androidPause(l); await run(l.env, 1600);
+  assert.equal(l.audio.paused, false, 'ny runde: 1,5 s');
+});
+
+test('«Lyden venter på data» logges ikke ved start av sang, bare midt i en sang', async () => {
+  const l = ny();
+  l.env.el('play').click(); await run(l.env);
+  l.audio.currentTime = 0; l.audio.dispatch('waiting');
+  assert.ok(!logg(l).includes('Lyden venter på data (buffer tom)'));
+  l.audio.currentTime = 30; l.audio.dispatch('waiting');
+  assert.ok(logg(l).includes('Lyden venter på data (buffer tom)'));
 });
